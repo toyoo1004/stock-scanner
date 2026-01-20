@@ -15,12 +15,21 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install --upgrade yfinance pandas google-generativeai gspread
+          pip install --upgrade yfinance pandas google-generativeai
+          # 만약 향후에 완전히 패키지가 바뀌면 google-genai 로 변경 필요
       - name: Run Scanner
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
-          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
-          GSPREAD_KEY: ${{ secrets.GSPREAD_KEY }}
         run: python scanner.py
+      
+      - name: Send Mail
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: toyoo1004@gmail.com
+          password: ${{secrets.MAIL_PASSWORD}}
+          subject: "🎯 오늘의 Gemini 3 주식 분석 리포트"
+          to: toyoo1004@gmail.com
+          from: Stock AI Bot
+          body: "Gemini 3 Flash가 분석한 오늘의 매수 신호입니다. 분석 리포트를 확인하세요."
+          attachments: result.txt
