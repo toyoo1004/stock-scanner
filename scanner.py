@@ -8,127 +8,106 @@ import json
 import os
 import time
 import warnings
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
-# 불필요한 FutureWarning 무시
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # === [1. 설정부] ===
-# Gemini API 설정
 genai.configure(api_key="AIzaSyD45Cht5i2fiv19NBxdatFZLTDFrkon47A")
 
-def update_google_sheet_rows(found_data):
-    """분석된 데이터를 구글 시트에 행 단위로 기록"""
+def send_email_with_file(file_path, found_count):
+    """생성된 result.txt 파일을 이메일로 발송"""
     try:
-        key_content = os.environ.get('GSPREAD_KEY')
-        if not key_content: 
-            print("❌ 환경변수 GSPREAD_KEY를 찾을 수 없습니다.")
+        # 환경 변수에서 메일 설정 로드 (사용자 설정 필요)
+        sender_email = os.environ.get('SENDER_EMAIL')  # 보내는 메일
+        sender_pw = os.environ.get('SENDER_PW')        # 앱 비밀번호
+        receiver_email = os.environ.get('RECEIVER_EMAIL') # 받는 메일
+
+        if not all([sender_email, sender_pw, receiver_email]):
+            print("❌ 메일 설정 환경변수가 누락되었습니다.")
             return
-        
-        secret_json = json.loads(key_content)
-        gc = gspread.service_account_from_dict(secret_json)
-        
-        # 지정된 구글 시트 열기
-        sheet_url = "https://docs.google.com/spreadsheets/d/1nX2rx6Mkx98zPQqkOJEYigxnAYwBxsartKDX-vFLvjQ/edit"
-        sh = gc.open_by_url(sheet_url)
-        worksheet = sh.get_worksheet(0)
-        
-        now = datetime.now().strftime('%Y-%m-%d %H:%M')
-        
-        for item in found_data:
-            # AI 분석이 정상적으로 완료된 것만 기록
-            if "지연 중" not in item['analysis']:
-                row = [
-                    now, 
-                    item['ticker'], 
-                    f"{item['readiness']:.2f}%", 
-                    f"${item['price']}", 
-                    item['analysis']
-                ]
-                worksheet.append_row(row)
-                print(f"✅ {item['ticker']} 시트 업데이트 완료")
-                
+
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = receiver_email
+        msg['Subject'] = f"🚀 [Stock Scan] {datetime.now().strftime('%Y-%m-%d')} 분석 리포트 ({found_count}종목)"
+
+        body = f"오늘 조건에 부합하는 {found_count}개 종목의 수급 분석 리포트입니다.\n첨부된 result.txt 파일을 확인하세요."
+        msg.attach(MIMEText(body, 'plain'))
+
+        # 파일 첨부
+        with open(file_path, "rb") as attachment:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(attachment.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(file_path)}")
+            msg.attach(part)
+
+        # SMTP 서버 연결 (Gmail 기준)
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_pw)
+        server.send_message(msg)
+        server.quit()
+        print(f"📧 이메일 발송 완료 (파일: {os.path.basename(file_path)})")
     except Exception as e:
-        print(f"❌ 구글 시트 업데이트 실패: {e}")
+        print(f"❌ 메일 발송 실패: {e}")
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
-    """AI를 이용한 3단계 상세 수급 분석 리포트 생성"""
     for attempt in range(3):
         try:
             model = genai.GenerativeModel('gemini-1.5-flash') 
             prompt = f"""
-            주식 수급 및 기술적 분석 전문가로서 {ticker}에 대한 매수 추천 리포트를 작성하세요.
-            [데이터] 현재가 ${price:.2f}, 준비도 {readiness:.2f}%, 거래량 {vol_ratio:.1f}배, OBV 상태: {obv_status}.
-            
-            매수 추천 이유를 1, 2, 3번 번호를 붙여 아주 상세하게 한국어로 작성하세요. 
-            단순한 지표 나열이 아닌, 세력의 매집 흔적과 향후 돌파 가능성을 전문적으로 통찰하세요.
+            주식 수급 전문가로서 {ticker} 분석 리포트를 작성하세요.
+            [데이터] 현재가 ${price:.2f}, 준비도 {readiness:.2f}%, 거래량 {vol_ratio:.1f}배, OBV {obv_status}.
+            매수 추천 이유를 1, 2, 3번 번호를 붙여 아주 상세하게 한국어로 작성하세요. 전문적인 통찰을 제공하세요.
             """
             response = model.generate_content(prompt, generation_config={"temperature": 0.2})
-            if response and response.text:
-                return response.text.strip()
-        except:
-            time.sleep(2) # API 과부하 시 잠시 대기
-    return "AI 분석 지연 중 (나중에 다시 확인하세요)"
+            if response.text: return response.text.strip()
+        except: time.sleep(2)
+    return "AI 분석 지연 중"
 
 def scan_logic(ticker):
-    """개별 종목 스캔 및 기술적 지표 계산 (에러 발생 시 자동 스킵)"""
     try:
         stock = yf.Ticker(ticker)
-        # 타임아웃을 늘려 안정성 확보
         df = stock.history(period="1y", timeout=15)
-        
-        # 데이터가 부족하거나 비어있는 경우 조용히 스킵
-        if df is None or df.empty or len(df) < 100:
-            return None
+        if df is None or df.empty or len(df) < 100: return None
         
         close = df['Close']
-        
-        # [2026-01-19] OBV(On-Balance Volume) 상시 계산
+        # [2026-01-19] OBV 상시 계산 요청 반영
         obv = [0]
         for i in range(1, len(df)):
-            if close.iloc[i] > close.iloc[i-1]:
-                obv.append(obv[-1] + df['Volume'].iloc[i])
-            elif close.iloc[i] < close.iloc[i-1]:
-                obv.append(obv[-1] - df['Volume'].iloc[i])
-            else:
-                obv.append(obv[-1])
+            if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
+            elif close.iloc[i] < close.iloc[i-1]: obv.append(obv[-1] - df['Volume'].iloc[i])
+            else: obv.append(obv[-1])
         df['OBV'] = obv
         
-        # 기술적 지표 계산
-        sma20 = close.rolling(20).mean()
-        sma200 = close.rolling(200).mean()
+        sma20, sma200 = close.rolling(20).mean(), close.rolling(200).mean()
         vol_ma = df['Volume'].rolling(20).mean()
-        
-        # 윌리엄스 변동성 지표(WVF) 계산
         highest_22 = close.rolling(22).max()
         wvf = ((highest_22 - df['Low']) / highest_22) * 100
         wvf_limit = wvf.rolling(50).mean() + (2.1 * wvf.rolling(50).std())
         
-        # OBV 점수 계산 (수급 확인)
         o_score = 15 if df['OBV'].iloc[-1] > pd.Series(obv).rolling(20).mean().iloc[-1] else 0
-        
-        # 준비도(Readiness) 산출 (총점 100점 만점 기준)
         readiness = (30 if df['Low'].iloc[-1] <= sma20.iloc[-1] * 1.04 else 0) + \
                     (30 if close.iloc[-1] > sma200.iloc[-1] else 0) + \
                     min((wvf.iloc[-1] / wvf_limit.iloc[-1]) * 25, 25) + o_score
         
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
-        # 최종 포착 기준: 준비도 90% 이상 & 거래량 폭증
         if readiness >= 90 and vol_p > 1.2:
             print(f"🎯 신호 포착: {ticker}")
-            obv_status = "강력 우상향 (매집 포착)" if o_score > 0 else "추세 확인 중"
-            # AI 분석 호출 전 짧은 대기 (Rate Limit 방지)
-            time.sleep(0.5)
+            obv_status = "상승 강세(기관 매집 확인)" if o_score > 0 else "보통"
             analysis = analyze_with_gemini(ticker, readiness, close.iloc[-1], vol_p, obv_status)
             return {'ticker': ticker, 'readiness': readiness, 'price': round(close.iloc[-1], 2), 'analysis': analysis}
-            
-    except Exception:
-        # 에러 발생 시 로그를 남기지 않고 조용히 넘김 (스킵)
-        return None
-    return None
+    except: return None
 
 if __name__ == "__main__":
-    # 요청하신 25개 카테고리 전체 티커 리스트
+    # 25개 카테고리 티커 리스트 (전문 포함)
     raw_sectors = {
         "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
         "2. Semiconductors": ["TSM", "ASML", "AMAT", "LRCX", "MU", "QCOM", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
@@ -157,23 +136,34 @@ if __name__ == "__main__":
         "25. Space": ["SPCE", "RKLB", "ASTS", "BKSY", "PL", "SPIR", "LUNR", "VSAT", "IRDM", "JOBY", "ACHR", "UP", "MNTS", "RDW", "SIDU", "LLAP", "BA", "LMT", "NOC", "RTX", "LHX", "GD", "HII", "LDOS", "TXT", "HWM"]
     }
 
-    # 전체 종목 리스트 합치기 및 중복 제거
     all_tickers = []
-    for t_list in raw_sectors.values():
-        all_tickers.extend(t_list)
+    for t_list in raw_sectors.values(): all_tickers.extend(t_list)
     all_tickers = list(set(all_tickers))
     
-    print(f"🚀 총 {len(all_tickers)}개 종목 분석 시작 (에러 종목 자동 스킵)...")
+    print(f"🚀 총 {len(all_tickers)}개 종목 분석 시작...")
 
-    # 안정적인 분석을 위해 병렬 작업 수를 5개로 제한
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         results = list(executor.map(scan_logic, all_tickers))
     
-    # 신호가 포착된 유효한 데이터만 필터링
     found = [r for r in results if r and "지연 중" not in r['analysis']]
     
     if found:
-        print(f"📊 {len(found)}개의 핵심 종목 포착! 시트 전송을 시작합니다.")
-        update_google_sheet_rows(found)
+        # result.txt 파일 생성
+        report_text = f"=== Stock Scanner Report ({datetime.now().strftime('%Y-%m-%d %H:%M')}) ===\n"
+        report_text += f"포착된 종목 수: {len(found)}\n"
+        report_text += "=" * 50 + "\n\n"
+        
+        for item in sorted(found, key=lambda x: x['readiness'], reverse=True):
+            report_text += f"[{item['ticker']}] 준비도: {item['readiness']:.2f}% | 현재가: ${item['price']}\n"
+            report_text += f"{item['analysis']}\n"
+            report_text += "-" * 50 + "\n\n"
+        
+        with open("result.txt", "w", encoding="utf-8") as f:
+            f.write(report_text)
+            
+        print(f"📊 {len(found)}개 종목 포착! result.txt 생성 완료.")
+        
+        # 메일 발송
+        send_email_with_file("result.txt", len(found))
     else:
-        print("🚩 오늘 조건(준비도 90% 이상)에 맞는 종목이 없습니다.")
+        print("🚩 조건에 맞는 종목이 없습니다.")
