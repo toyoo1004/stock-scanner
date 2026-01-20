@@ -1,7 +1,7 @@
 name: Daily Stock Scan
 on:
   schedule:
-    - cron: '40 20 * * *' # 한국 시간 오전 5시 40분
+    - cron: '40 20 * * *'
   workflow_dispatch:
 
 jobs:
@@ -15,6 +15,21 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install --upgrade google-generativeai yfinance pandas xlsxwriter
+          pip install --upgrade yfinance pandas google-generativeai
+          # 만약 향후에 완전히 패키지가 바뀌면 google-genai 로 변경 필요
       - name: Run Scanner
         run: python scanner.py
+      
+      - name: Send Mail
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: toyoo1004@gmail.com
+          password: ${{secrets.MAIL_PASSWORD}}
+          subject: "🎯 오늘의 Gemini 3 주식 분석 리포트"
+          to: toyoo1004@gmail.com
+          from: Stock AI Bot
+          body: "Gemini 3 Flash가 분석한 오늘의 매수 신호입니다. 분석 리포트를 확인하세요."
+          attachments: result.txt
