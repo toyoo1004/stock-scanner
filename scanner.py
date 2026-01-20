@@ -2,8 +2,9 @@ import yfinance as yf
 import pandas as pd
 import concurrent.futures
 from datetime import datetime
+import sys
 
-# === [전 섹터 티커 리스트: 25개 섹터 전체] ===
+# === [25개 섹터 티커 리스트] ===
 SECTORS = {
     "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
     "2. Semiconductors": ["TSM", "AVGO", "AMD", "INTC", "ASML", "AMAT", "LRCX", "MU", "QCOM", "ADI", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
@@ -34,72 +35,71 @@ SECTORS = {
 
 def scan_logic(ticker):
     try:
-        # 데이터 수집 타임아웃 10초 적용
         stock = yf.Ticker(ticker)
-        df = stock.history(period="1y", timeout=10)
+        # 타임아웃을 15초로 늘려 안정성 확보
+        df = stock.history(period="1y", timeout=15)
         
-        if df is None or len(df) < 100: return None
+        if df is None or len(df) < 100:
+            return None
         
         close = df['Close']
+        # OBV 계산
+        obv = [0]
+        for i in range(1, len(df)):
+            if close.iloc[i] > close.iloc[i-1]:
+                obv.append(obv[-1] + df['Volume'].iloc[i])
+            elif close.iloc[i] < close.iloc[i-1]:
+                obv.append(obv[-1] - df['Volume'].iloc[i])
+            else:
+                obv.append(obv[-1])
+        df['OBV'] = obv
+        
+        # 보조지표
         sma20 = close.rolling(20).mean()
         sma200 = close.rolling(200).mean()
         vol_ma = df['Volume'].rolling(20).mean()
         
-        # WVF (Williams Vix Fix) 공포 지수
+        # WVF
         highest_22 = close.rolling(22).max()
         wvf = ((highest_22 - df['Low']) / highest_22) * 100
         wvf_limit = wvf.rolling(50).mean() + (2.1 * wvf.rolling(50).std())
         
-        # OBV (On-Balance Volume) 계산
-        obv = [0]
-        for i in range(1, len(df)):
-            if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
-            elif close.iloc[i] < close.iloc[i-1]: obv.append(obv[-1] - df['Volume'].iloc[i])
-            else: obv.append(obv[-1])
-        obv_s = pd.Series(obv, index=df.index)
-        
-        # Readiness 점수 계산
+        # 스코어링
         p_score = 30 if df['Low'].iloc[-1] <= sma20.iloc[-1] * 1.04 else 0
         t_score = 30 if close.iloc[-1] > sma200.iloc[-1] else 0
         f_score = min((wvf.iloc[-1] / wvf_limit.iloc[-1]) * 25, 25) if wvf_limit.iloc[-1] != 0 else 0
-        o_score = 15 if obv_s.iloc[-1] > obv_s.rolling(20).mean().iloc[-1] else 0
+        o_score = 15 if df['OBV'].iloc[-1] > df['OBV'].rolling(20).mean().iloc[-1] else 0
         
         readiness = p_score + t_score + f_score + o_score
-        vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1]
+        vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
-        # 최종 Signal BUY 필터링
         if readiness >= 90 and vol_p > 1.3:
-            return f"[{ticker}] Readiness: {readiness:.1f}% | Price: ${close.iloc[-1]:.2f} | Vol: {vol_p:.1f}x | OBV: {'UP' if o_score > 0 else 'DN'}"
-    except Exception:
+            return f"[{ticker}] Readiness: {readiness:.1f}% | Price: ${close.iloc[-1]:.2f} | Vol: {vol_p:.1f}x"
+    except Exception as e:
         return None
     return None
 
 if __name__ == "__main__":
-    start_time = datetime.now()
-    print(f"=== QUANT NEXUS AUTOMATED SCAN START: {start_time} ===")
+    print(f"=== SCAN START: {datetime.now()} ===")
     
-    # 중복 제거된 전체 티커 리스트 병합
+    # 티커 추출 및 중복 제거
     all_tickers = []
-    for t_list in SECTORS.values(): all_tickers.extend(t_list)
-    all_tickers = list(set(all_tickers))
+    for t_list in SECTORS.values():
+        all_tickers.extend(t_list)
+    unique_tickers = list(set(all_tickers))
     
-    print(f"Processing {len(all_tickers)} tickers...")
+    # 병렬 처리 (서버 부하 조절을 위해 10개로 제한)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(scan_logic, unique_tickers))
     
-    # 서버 환경 최적화: 15개 병렬 스레드 사용
-    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
-        results = list(executor.map(scan_logic, all_tickers))
-    
-    # 신호 포착 결과 정리
     found = [r for r in results if r]
     
-    print("\n" + "="*60)
+    print("\n" + "="*50)
     if found:
-        print(f" 🎯 TODAY'S SIGNAL BUY LIST ({len(found)} stocks)")
-        print("-" * 60)
-        for f in found: print(f)
+        print(f"🎯 SIGNAL BUY DETECTED ({len(found)} stocks):")
+        for f in found:
+            print(f)
     else:
-        print(" No BUY signals detected in today's scan.")
-    print("="*60)
-    
-    end_time = datetime.now()
-    print(f"\n=== SCAN COMPLETED IN {end_time - start_time} ===")
+        print("No signals found.")
+    print("="*50)
+    print(f"=== SCAN END: {datetime.now()} ===")
