@@ -14,19 +14,20 @@ from email import encoders
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# API 설정
+# [API 설정]
 API_KEY = os.environ.get('GEMINI_API_KEY')
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
 def send_combined_report(report_content, found_count):
+    """메일 본문에 리포트 전체를 삽입하고 result.txt 파일도 첨부"""
     try:
         sender_email = os.environ.get('SENDER_EMAIL')
-        sender_pw = os.environ.get('SENDER_PW')
+        sender_pw = os.environ.get('MAIL_PASSWORD') # 사용자님 설정에 맞춤
         receiver_email = os.environ.get('RECEIVER_EMAIL')
 
         if not all([sender_email, sender_pw, receiver_email]):
-            print("❌ 메일 설정 누락")
+            print("❌ 메일 환경변수 설정 누락")
             return
 
         msg = MIMEMultipart()
@@ -75,7 +76,7 @@ def scan_logic(ticker):
         if df is None or df.empty or len(df) < 100: return None
         
         close = df['Close']
-        # OBV 상시 계산
+        # [2026-01-19] OBV 계산 필수 포함
         obv = [0]
         for i in range(1, len(df)):
             if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
@@ -87,6 +88,7 @@ def scan_logic(ticker):
         vol_ma = df['Volume'].rolling(20).mean()
         o_score = 15 if df['OBV'].iloc[-1] > pd.Series(obv).rolling(20).mean().iloc[-1] else 0
         
+        # 준비도 계산 (기준 90%)
         readiness = (30 if df['Low'].iloc[-1] <= sma20.iloc[-1] * 1.05 else 0) + 45 + o_score
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
@@ -96,13 +98,13 @@ def scan_logic(ticker):
     except: return None
 
 if __name__ == "__main__":
-    # 데이터 오류 티커(FEYE, DFS, FFIE 등) 제거 완료
+    # 데이터 에러 발생 티커(FEYE, DFS, FFIE 등) 제거 완료
     raw_sectors = {
         "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
         "2. Semiconductors": ["TSM", "ASML", "AMAT", "LRCX", "MU", "QCOM", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
-        "3. Rare Earth": ["MP", "UUUU", "LAC", "SGML", "REMX", "TMC", "NB", "TMQ", "TMRC", "UAMY", "AREC", "IDR", "RIO", "BHP", "VALE", "FCX", "SCCO", "AA", "CENX", "KALU", "CRS", "ATI", "HAYW"],
+        "3. Rare Earth": ["MP", "UUUU", "LAC", "SGML", "REMX", "TMC", "NB", "TMQ", "TMRC", "UAMY", "AREC", "IDR", "RIO", "BHP", "VALE", "FCX", "SCCO", "AA", "CENX", "KALU", "CRS", "ATI"],
         "4. Weight Loss & Bio": ["LLY", "NVO", "AMGN", "PFE", "VKTX", "ALT", "GILD", "BMY", "JNJ", "ABBV", "MRK", "BIIB", "REGN", "VRTX", "MRNA", "BNTX", "NVS", "AZN", "SNY", "ALNY", "SRPT", "BMRN", "INCY", "UTHR", "GERN", "CRSP", "EDIT", "NTLA", "BEAM", "AXSM"],
-        "5. Fintech & Crypto": ["COIN", "MSTR", "HOOD", "PYPL", "SOFI", "AFRM", "UPST", "MARA", "RIOT", "CLSK", "HUT", "WULF", "CIFR", "BTBT", "IREN", "CORZ", "BITF", "V", "MA", "AXP", "COF", "NU", "DAVE", "LC", "GLBE", "BILL", "TOST", "MQ", "FOUR"],
+        "5. Fintech & Crypto": ["COIN", "MSTR", "HOOD", "PYPL", "SOFI", "AFRM", "UPST", "MARA", "RIOT", "CLSK", "HUT", "WULF", "CIFR", "BTBT", "IREN", "CORZ", "SDIG", "BITF", "V", "MA", "AXP", "COF", "NU", "DAVE", "LC", "GLBE", "BILL", "TOST", "MQ", "FOUR"],
         "6. Defense & Space": ["RTX", "LMT", "NOC", "GD", "BA", "LHX", "HII", "LDOS", "TXT", "HWM", "AXON", "KTOS", "AVAV", "RKLB", "SPCE", "ASTS", "LUNR", "PL", "SPIR", "BKSY", "VSAT", "IRDM", "SAIC", "CACI", "CW", "HEI", "TDY", "MTSI", "RCAT", "SHLD"],
         "7. Uranium & Nuclear": ["CCJ", "UUUU", "NXE", "UEC", "DNN", "SMR", "BWXT", "LEU", "OKLO", "FLR", "URA", "URNM", "NLR", "SRUUF", "PDN", "BOE", "PENMF", "CEG", "PEG", "EXC", "D", "SO", "NEE", "DUK", "ETR", "PCG", "VST"],
         "8. Consumer & Luxury": ["LVMUY", "RACE", "NKE", "LULU", "ONON", "DECK", "CROX", "RL", "TPR", "CPRI", "PVH", "VFC", "UAA", "COLM", "ANF", "AEO", "URBN", "ROST", "TJX", "HESAY", "CFRUY", "PPRUY", "BURBY", "EL", "COTY", "ULTA", "ELF"],
