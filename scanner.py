@@ -8,16 +8,19 @@ import json
 import os
 import warnings
 
-# 불필요한 경고 메시지 무시
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # === [1. 설정부] ===
 genai.configure(api_key="AIzaSyD45Cht5i2fiv19NBxdatFZLTDFrkon47A")
 
-def update_google_sheet_combined(found_data):
+def update_google_sheet_rows(found_data):
+    """종목별로 시트에 개별 행으로 입력하여 데이터 유실 방지"""
     try:
         key_content = os.environ.get('GSPREAD_KEY')
-        if not key_content: return
+        if not key_content: 
+            print("❌ GSPREAD_KEY 설정이 없습니다.")
+            return
+        
         secret_json = json.loads(key_content)
         gc = gspread.service_account_from_dict(secret_json)
         
@@ -25,19 +28,22 @@ def update_google_sheet_combined(found_data):
         sh = gc.open_by_url(sheet_url)
         worksheet = sh.get_worksheet(0)
         
-        combined_report = ""
-        # 준비도 높은 순서로 정렬
-        for item in sorted(found_data, key=lambda x: x['readiness'], reverse=True):
-            readiness_fmt = f"{item['readiness']:.2f}%"
-            combined_report += f"[{item['ticker']}] {readiness_fmt} | ${item['price']}\n"
-            combined_report += f"{item['analysis']}\n"
-            combined_report += "=" * 45 + "\n"
-
         now = datetime.now().strftime('%Y-%m-%d %H:%M')
-        worksheet.append_row([now, f"{len(found_data)}개 종목 포착", combined_report])
-        print(f"✅ {len(found_data)}개 종목 분석 완료 및 시트 전송!")
+        
+        # 포착된 각 종목을 시트에 한 줄씩 추가
+        for item in sorted(found_data, key=lambda x: x['readiness'], reverse=True):
+            row = [
+                now, 
+                item['ticker'], 
+                f"{item['readiness']:.2f}%", 
+                f"${item['price']}", 
+                item['analysis']
+            ]
+            worksheet.append_row(row)
+            print(f"✅ {item['ticker']} 시트 전송 완료")
+            
     except Exception as e:
-        print(f"❌ 시트 업데이트 실패: {e}")
+        print(f"❌ 시트 업데이트 상세 에러: {e}")
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
     try:
@@ -54,16 +60,14 @@ def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
 
 def scan_logic(ticker):
     try:
-        # 에러 발생 시 사용자 화면에 에러를 출력하지 않고 조용히 스킵함
         stock = yf.Ticker(ticker)
-        df = stock.history(period="1y", timeout=5)
+        df = stock.history(period="1y", timeout=10)
         
-        # 데이터가 없거나, 상장 폐지되었거나, 데이터 길이가 부족하면 조용히 스킵(None 반환)
         if df is None or df.empty or len(df) < 100:
             return None
         
         close = df['Close']
-        # [2026-01-19] OBV 상시 계산
+        # [2026-01-19] OBV 계산 로직
         obv = [0]
         for i in range(1, len(df)):
             if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
@@ -84,18 +88,18 @@ def scan_logic(ticker):
         
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
-        # 포착 기준 (데이터가 있는 종목 중 조건에 맞는 것만 필터링)
+        # 신호 포착 기준 (90% 이상)
         if readiness >= 90 and vol_p > 1.2:
-            obv_status = "상승 강세(기관 매집 확인)" if o_score > 0 else "보통"
+            print(f"🎯 신호 포착: {ticker} (준비도: {readiness:.2f}%)")
+            obv_status = "상승 강세(기관 매집)" if o_score > 0 else "보통"
             analysis = analyze_with_gemini(ticker, readiness, close.iloc[-1], vol_p, obv_status)
             return {'ticker': ticker, 'readiness': readiness, 'price': round(close.iloc[-1], 2), 'analysis': analysis}
     except:
-        # 어떤 종류의 에러가 나더라도 그냥 무시하고 다음 종목으로 넘어감
         return None
     return None
 
 if __name__ == "__main__":
-    # 요청하신 25개 카테고리 전체 리스트 (에러 나는 종목 포함되어 있어도 상관없음)
+    # 25개 카테고리 티커 리스트 (사용자 제공 리스트 그대로 사용)
     raw_sectors = {
         "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
         "2. Semiconductors": ["TSM", "ASML", "AMAT", "LRCX", "MU", "QCOM", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
@@ -104,7 +108,7 @@ if __name__ == "__main__":
         "5. Fintech & Crypto": ["COIN", "MSTR", "HOOD", "PYPL", "SOFI", "AFRM", "UPST", "MARA", "RIOT", "CLSK", "HUT", "WULF", "CIFR", "BTBT", "IREN", "CORZ", "SDIG", "GREE", "BITF", "V", "MA", "AXP", "DFS", "COF", "NU", "DAVE", "LC", "GLBE", "BILL", "TOST", "MQ", "FOUR"],
         "6. Defense & Space": ["RTX", "LMT", "NOC", "GD", "BA", "LHX", "HII", "LDOS", "TXT", "HWM", "AXON", "KTOS", "AVAV", "RKLB", "SPCE", "ASTS", "LUNR", "PL", "SPIR", "BKSY", "VSAT", "IRDM", "SAIC", "CACI", "CW", "HEI", "TDY", "AJRD", "MTSI", "RCAT", "SHLD"],
         "7. Uranium & Nuclear": ["CCJ", "UUUU", "NXE", "UEC", "DNN", "SMR", "BWXT", "LEU", "OKLO", "FLR", "URA", "URNM", "NLR", "SRUUF", "FCU", "GLO", "PDN", "BOE", "DYL", "PENMF", "CEG", "PEG", "EXC", "D", "SO", "NEE", "DUK", "ETR", "PCG", "VST"],
-        "8. Consumer & Luxury": ["LVMUY", "RACE", "NKE", "LULU", "ONON", "DECK", "CROX", "SKX", "RL", "TPR", "CPRI", "PVH", "VFC", "UAA", "COLM", "GPS", "ANF", "AEO", "URBN", "ROST", "TJX", "HESAY", "CFRUY", "PPRUY", "BURBY", "BOSS.DE", "EL", "COTY", "ULTA", "ELF"],
+        "8. Consumer & Luxury": ["LVMUY", "RACE", "NKE", "LULU", "ONON", "DECK", "CROX", "RL", "TPR", "CPRI", "PVH", "VFC", "UAA", "COLM", "GPS", "ANF", "AEO", "URBN", "ROST", "TJX", "HESAY", "CFRUY", "PPRUY", "BURBY", "BOSS.DE", "EL", "COTY", "ULTA", "ELF"],
         "9. Meme & Reddit": ["GME", "AMC", "RDDT", "DJT", "TSLA", "PLTR", "SOFI", "OPEN", "LCID", "RIVN", "CHPT", "NKLA", "SPCE", "TLRY", "CGC", "SNDL", "BB", "NOK", "KOSS", "EXPR", "MULN", "FFIE", "HOLO", "GNS", "CVNA", "AI", "BIG", "RAD", "WISH", "CLOV"],
         "10. Quantum": ["IONQ", "RGTI", "QUBT", "HON", "IBM", "MSFT", "GOOGL", "INTC", "FORM", "AMAT", "ASML", "KEYS", "ADI", "TXN", "NVDA", "AMD", "QCOM", "AVGO", "TSM", "MU", "D-WAVE", "ARQQ", "QBTS", "QMCO"],
         "11. Robotics": ["ISRG", "TER", "PATH", "SYM", "ABB", "CGNX", "ROCK", "ATSG", "ROBO", "BOTZ", "IRBT", "NVDA", "TSLA", "DE", "CAT", "EMR", "PH", "FANUC", "YASKY", "KUKAY", "SIEGY"],
@@ -124,20 +128,21 @@ if __name__ == "__main__":
         "25. Space": ["SPCE", "RKLB", "ASTS", "BKSY", "PL", "SPIR", "LUNR", "VSAT", "IRDM", "JOBY", "ACHR", "UP", "MNTS", "RDW", "SIDU", "LLAP", "VORB", "ASTR", "DCO", "TL0", "BA", "LMT", "NOC", "RTX", "LHX", "GD", "HII", "LDOS", "TXT", "HWM"]
     }
 
-    # 전체 종목 리스트 합치기 (중복 제거)
     all_tickers = []
     for t_list in raw_sectors.values():
         all_tickers.extend(t_list)
     
     all_tickers = list(set(all_tickers))
-    print(f"🚀 총 {len(all_tickers)}개 종목 스캔 시작 (에러 종목 자동 스킵)...")
+    print(f"🚀 총 {len(all_tickers)}개 종목 분석 시작...")
 
-    # 병렬 처리로 속도 향상
+    # 병렬 처리
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(scan_logic, all_tickers))
     
     found = [r for r in results if r]
+    
     if found:
-        update_google_sheet_combined(found)
+        print(f"📊 총 {len(found)}개 종목이 조건에 부합합니다. 시트로 전송합니다.")
+        update_google_sheet_rows(found)
     else:
-        print("🚩 신호가 포착된 종목이 없습니다.")
+        print("🚩 신호 포착 종목 없음.")
