@@ -18,6 +18,8 @@ jobs:
           pip install --upgrade yfinance pandas google-generativeai
           # 만약 향후에 완전히 패키지가 바뀌면 google-genai 로 변경 필요
       - name: Run Scanner
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # 이 부분이 핵심입니다.
         run: python scanner.py
       
       - name: Send Mail
