@@ -6,6 +6,10 @@ import google.generativeai as genai
 import gspread
 import json
 import os
+import warnings
+
+# 불필요한 경고 메시지 무시
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # === [1. 설정부] ===
 genai.configure(api_key="AIzaSyD45Cht5i2fiv19NBxdatFZLTDFrkon47A")
@@ -22,38 +26,47 @@ def update_google_sheet_combined(found_data):
         worksheet = sh.get_worksheet(0)
         
         combined_report = ""
-        for item in found_data:
-            # 퍼센트 소수점 둘째 자리까지 제한 (xx.xx%)
+        # 준비도 높은 순으로 정렬하여 리포트 생성
+        for item in sorted(found_data, key=lambda x: x['readiness'], reverse=True):
             readiness_fmt = f"{item['readiness']:.2f}%"
             combined_report += f"[{item['ticker']}] {readiness_fmt} | ${item['price']}\n"
             combined_report += f"{item['analysis']}\n"
-            combined_report += "=" * 40 + "\n"
+            combined_report += "=" * 45 + "\n"
 
         now = datetime.now().strftime('%Y-%m-%d %H:%M')
+        # 한 줄(Cell)에 모든 분석 내용을 입력
         worksheet.append_row([now, f"{len(found_data)}개 종목 포착", combined_report])
-        print("✅ 25개 섹터 통합 리포트 시트 전송 완료!")
+        print("✅ 구글 시트에 상세 리포트 전송 성공!")
     except Exception as e:
-        print(f"❌ 시트 업데이트 실패: {e}")
+        print(f"❌ 시트 업데이트 오류: {e}")
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
     try:
         model = genai.GenerativeModel('gemini-1.5-flash') 
+        # 오후 6:38에 만족하셨던 상세 분석 프롬프트
         prompt = f"""
-        주식 전문가로서 {ticker} 분석: 현재가 ${price:.2f}, 준비도 {readiness:.2f}%, 거래량 {vol_ratio:.1f}배, OBV {obv_status}.
-        매수 추천 이유를 1, 2, 3번 번호를 붙여 아주 상세하게 한국어로 작성해줘.
+        당신은 주식 시장 수급 전문가입니다. {ticker} 종목을 분석하세요.
+        - 현재가: ${price:.2f}
+        - 기술적 준비도: {readiness:.2f}%
+        - 거래량 폭발: 평소 대비 {vol_ratio:.1f}배
+        - OBV(거래량 지표): {obv_status}
+        
+        위 데이터를 근거로 매수 추천 이유를 1, 2, 3번 번호를 붙여 아주 상세하고 전문적으로 한국어로 작성하세요. 
+        단순 요약이 아니라 기관의 매집이나 기술적 돌파 가능성을 구체적으로 언급해 주세요.
         """
-        response = model.generate_content(prompt, generation_config={"temperature": 0.1})
+        response = model.generate_content(prompt, generation_config={"temperature": 0.2})
         return response.text.strip()
-    except: return "AI 분석 지연 중"
+    except:
+        return "AI 분석 지연 중입니다."
 
 def scan_logic(ticker):
     try:
         stock = yf.Ticker(ticker)
-        df = stock.history(period="1y", timeout=8) # 타임아웃 최적화
+        df = stock.history(period="1y", timeout=10)
         if df is None or len(df) < 100: return None
         
         close = df['Close']
-        # [2026-01-19] OBV 상시 계산
+        # [2026-01-19] OBV 상시 계산 요청 반영
         obv = [0]
         for i in range(1, len(df)):
             if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
@@ -74,14 +87,15 @@ def scan_logic(ticker):
         
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
+        # 신호 포착 기준 (준비도 90%, 거래량 1.3배 이상 - 필요 시 조정 가능)
         if readiness >= 90 and vol_p > 1.3:
-            obv_status = "상승 강세" if o_score > 0 else "보통"
+            obv_status = "강력 우상향 (기관 매집 징후)" if o_score > 0 else "보통"
             analysis = analyze_with_gemini(ticker, readiness, close.iloc[-1], vol_p, obv_status)
             return {'ticker': ticker, 'readiness': readiness, 'price': round(close.iloc[-1], 2), 'analysis': analysis}
     except: return None
 
 if __name__ == "__main__":
-    # 사용자님이 주신 25개 카테고리 전체 데이터
+    # 요청하신 25개 카테고리 전체 리스트
     raw_sectors = {
         "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
         "2. Semiconductors": ["NVDA", "TSM", "AVGO", "AMD", "INTC", "ASML", "AMAT", "LRCX", "MU", "QCOM", "ADI", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
@@ -89,7 +103,7 @@ if __name__ == "__main__":
         "4. Weight Loss & Bio": ["LLY", "NVO", "AMGN", "PFE", "VKTX", "ALT", "ZP", "GILD", "BMY", "JNJ", "ABBV", "MRK", "BIIB", "REGN", "VRTX", "MRNA", "BNTX", "NVS", "AZN", "SNY", "ALNY", "SRPT", "BMRN", "INCY", "UTHR", "GERN", "CRSP", "EDIT", "NTLA", "BEAM", "SAGE", "ITCI", "AXSM"],
         "5. Fintech & Crypto": ["COIN", "MSTR", "HOOD", "SQ", "PYPL", "SOFI", "AFRM", "UPST", "MARA", "RIOT", "CLSK", "HUT", "WULF", "CIFR", "BTBT", "IREN", "CORZ", "SDIG", "GREE", "BITF", "V", "MA", "AXP", "DFS", "COF", "NU", "DAVE", "LC", "GLBE", "BILL", "TOST", "MQ", "FOUR"],
         "6. Defense & Space": ["RTX", "LMT", "NOC", "GD", "BA", "LHX", "HII", "LDOS", "TXT", "HWM", "AXON", "KTOS", "AVAV", "RKLB", "SPCE", "ASTS", "LUNR", "PL", "SPIR", "BKSY", "VSAT", "IRDM", "SAIC", "CACI", "CW", "HEI", "TDY", "AJRD", "MTSI", "RCAT", "SHLD"],
-        "7. Uranium & Nuclear": ["CCJ", "UUUU", "NXE", "UEC", "DNN", "SMR", "BWXT", "LEU", "OKLO", "FLR", "URA", "URNM", "NLR", "SRUUF", "FCU", "GLO", "PDN", "BOE", "DYL", "PENMF", "CEG", "PEG", "EXC", "D", "SO", "NEE", "DUK", "ETR", "PCG", "VST"],
+        "7. Uranium & Nuclear": ["CCJ", "NXE", "UEC", "DNN", "SMR", "BWXT", "LEU", "OKLO", "FLR", "URA", "URNM", "NLR", "SRUUF", "FCU", "GLO", "PDN", "BOE", "DYL", "PENMF", "CEG", "PEG", "EXC", "D", "SO", "NEE", "DUK", "ETR", "PCG", "VST"],
         "8. Consumer & Luxury": ["LVMUY", "RACE", "NKE", "LULU", "ONON", "DECK", "CROX", "SKX", "RL", "TPR", "CPRI", "PVH", "VFC", "UAA", "COLM", "GPS", "ANF", "AEO", "URBN", "ROST", "TJX", "HESAY", "CFRUY", "PPRUY", "BURBY", "BOSS.DE", "EL", "COTY", "ULTA", "ELF"],
         "9. Meme & Reddit": ["GME", "AMC", "RDDT", "DJT", "TSLA", "PLTR", "SOFI", "OPEN", "LCID", "RIVN", "CHPT", "NKLA", "SPCE", "TLRY", "CGC", "SNDL", "BB", "NOK", "KOSS", "EXPR", "MULN", "FFIE", "HOLO", "GNS", "CVNA", "AI", "BIG", "RAD", "WISH", "CLOV"],
         "10. Quantum": ["IONQ", "RGTI", "QUBT", "HON", "IBM", "MSFT", "GOOGL", "INTC", "FORM", "AMAT", "ASML", "KEYS", "ADI", "TXN", "NVDA", "AMD", "QCOM", "AVGO", "TSM", "MU", "D-WAVE", "ARQQ", "QBTS", "QMCO"],
@@ -110,18 +124,19 @@ if __name__ == "__main__":
         "25. Space": ["SPCE", "RKLB", "ASTS", "BKSY", "PL", "SPIR", "LUNR", "VSAT", "IRDM", "JOBY", "ACHR", "UP", "MNTS", "RDW", "SIDU", "LLAP", "VORB", "ASTR", "DCO", "TL0", "BA", "LMT", "NOC", "RTX", "LHX", "GD", "HII", "LDOS", "TXT", "HWM"]
     }
 
-    # 각 섹터에서 최대 10개씩만 추출하여 분석 (성능 최적화)
+    # 각 섹터에서 상위 10개씩 추출 (총 약 250개 종목 분석)
     all_tickers = []
-    for t_list in raw_sectors.values():
+    for sector, t_list in raw_sectors.items():
         all_tickers.extend(t_list[:10]) 
     
-    # 중복 제거
     all_tickers = list(set(all_tickers))
-    print(f"🚀 총 {len(all_tickers)}개 핵심 종목 분석 시작...")
+    print(f"🚀 총 {len(all_tickers)}개 종목 분석 시작...")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(scan_logic, all_tickers))
     
     found = [r for r in results if r]
-    if found: update_google_sheet_combined(found)
-    else: print("오늘 신호가 포착된 종목이 없습니다.")
+    if found:
+        update_google_sheet_combined(found)
+    else:
+        print("현재 조건을 만족하는 급등 징후 종목이 없습니다.")
