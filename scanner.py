@@ -38,9 +38,9 @@ SECTORS = {
     "25. Space": ["SPCE", "RKLB", "ASTS", "BKSY", "PL", "SPIR", "LUNR", "VSAT", "IRDM", "JOBY", "ACHR", "UP", "MNTS", "RDW", "SIDU", "LLAP", "VORB", "ASTR", "DCO", "TL0", "BA", "LMT", "NOC", "RTX", "LHX", "GD", "HII", "LDOS", "TXT", "HWM"]
 }
 
-# === [3. Gemini 분석 함수 수정본] ===
+# === [3. Gemini 분석 함수 최종 수정본] ===
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
-    # 보안 및 콘텐츠 필터링 완화 설정 추가
+    # 안전 설정 (차단 방지)
     safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -56,14 +56,16 @@ def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
     - OBV 상태: {obv_status}
     - 요청: 이 종목이 왜 'Signal BUY'로 선정되었는지 기술적 이유를 포함하세요.
     """
+    
     try:
-        # 모델 생성 시 안전 설정 적용
-        model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_settings)
-        response = model.generate_content(prompt)
+        # 모델명을 'gemini-1.5-flash'로 직접 지정 (경로 문제 해결)
+        # 만약 그래도 에러가 나면 'gemini-pro'로 바꿔보세요.
+        target_model = genai.GenerativeModel(model_name='gemini-1.5-flash', safety_settings=safety_settings)
+        response = target_model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
-        # 에러 메시지를 더 구체적으로 확인하기 위해 수정
-        return f"AI 분석 일시적 지연 (사유: {str(e)[:50]}...)"
+        # 에러가 계속될 경우 더 구체적인 원인 파악
+        return f"AI 분석 지연 (사유: {str(e)})"
 
 # === [4. 스캔 로직] ===
 def scan_logic(ticker):
