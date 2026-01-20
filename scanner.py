@@ -22,7 +22,7 @@ def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
         return "AI 분석 불가 (사유: API Key 미설정)"
     try:
         # 모델명을 안정적인 1.5-flash로 설정
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        model = genai.GenerativeModel('gemini-3-flash') 
         prompt = f"""
         당신은 월스트리트 출신 퀀트 분석가입니다. {ticker} 종목에 대해 분석하세요.
         - 지표: 현재가 ${price:.2f}, Readiness {readiness:.1f}%, 거래량 {vol_ratio:.1f}배, OBV {obv_status}
