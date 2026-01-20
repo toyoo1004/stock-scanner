@@ -12,8 +12,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11' # <--- 이 부분을 3.9에서 3.11로 수정하세요!
+          python-version: '3.11'
       - name: Install dependencies
-        run: pip install yfinance pandas xlsxwriter
+        run: |
+          pip install yfinance pandas xlsxwriter google-generativeai
       - name: Run Scanner
         run: python scanner.py
