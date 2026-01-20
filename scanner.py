@@ -6,7 +6,8 @@ import google.generativeai as genai  # 경고를 없애기 위해 라이브러�
 import os
 
 # === [1. Gemini 3 Flash 설정] ===
-GEMINI_API_KEY = "AIzaSyD82WedQVrGDRPaEY2HUGe57pr6MLCLhZg"
+# 코드에 직접 입력하지 말고 아래처럼 수정하세요.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") 
 genai.configure(api_key=GEMINI_API_KEY)
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
