@@ -38,21 +38,32 @@ SECTORS = {
     "25. Space": ["SPCE", "RKLB", "ASTS", "BKSY", "PL", "SPIR", "LUNR", "VSAT", "IRDM", "JOBY", "ACHR", "UP", "MNTS", "RDW", "SIDU", "LLAP", "VORB", "ASTR", "DCO", "TL0", "BA", "LMT", "NOC", "RTX", "LHX", "GD", "HII", "LDOS", "TXT", "HWM"]
 }
 
-# === [3. Gemini 분석 함수] ===
+# === [3. Gemini 분석 함수 수정본] ===
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
+    # 보안 및 콘텐츠 필터링 완화 설정 추가
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+    
     prompt = f"""
     당신은 전문 주식 분석가입니다. 아래 데이터를 바탕으로 {ticker} 종목에 대한 투자 의견을 3문장 이내로 한국어로 작성하세요.
     - 현재가: ${price:.2f}
     - 매수 준비도(Readiness): {readiness:.1f}%
     - 평소 대비 거래량: {vol_ratio:.1f}배 폭발
-    - OBV 상태: {obv_status} (최근 20일 평균 대비 상승 여부)
-    - 요청: 이 종목이 왜 'Signal BUY'로 선정되었는지 기술적 이유를 포함하고, 주의할 점도 언급하세요.
+    - OBV 상태: {obv_status}
+    - 요청: 이 종목이 왜 'Signal BUY'로 선정되었는지 기술적 이유를 포함하세요.
     """
     try:
+        # 모델 생성 시 안전 설정 적용
+        model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_settings)
         response = model.generate_content(prompt)
         return response.text.strip()
-    except Exception:
-        return "Gemini 분석 중 오류가 발생했습니다."
+    except Exception as e:
+        # 에러 메시지를 더 구체적으로 확인하기 위해 수정
+        return f"AI 분석 일시적 지연 (사유: {str(e)[:50]}...)"
 
 # === [4. 스캔 로직] ===
 def scan_logic(ticker):
