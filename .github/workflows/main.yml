@@ -19,7 +19,11 @@ jobs:
           # 만약 향후에 완전히 패키지가 바뀌면 google-genai 로 변경 필요
       - name: Run Scanner
         env:
-          GSPREAD_KEY: ${{ secrets.GSPREAD_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # 이 줄이 반드시 있어야 함!
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PW: ${{ secrets.SENDER_PW }}
+          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+          GSPREAD_KEY: ${{ secrets.GSPREAD_KEY }}}}
         run: python scanner.py
       
       - name: Send Mail
