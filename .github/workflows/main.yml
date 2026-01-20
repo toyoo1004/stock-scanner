@@ -20,7 +20,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-          SENDER_PW: ${{ secrets.SENDER_PW }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
           GSPREAD_KEY: ${{ secrets.GSPREAD_KEY }}
         run: python scanner.py
