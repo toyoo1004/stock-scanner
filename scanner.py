@@ -3,7 +3,7 @@ import pandas as pd
 import concurrent.futures
 from datetime import datetime
 
-# === [전 섹터 티커 리스트] ===
+# === [전 섹터 티커 리스트: 25개 섹터 전체] ===
 SECTORS = {
     "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
     "2. Semiconductors": ["TSM", "AVGO", "AMD", "INTC", "ASML", "AMAT", "LRCX", "MU", "QCOM", "ADI", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
@@ -34,21 +34,23 @@ SECTORS = {
 
 def scan_logic(ticker):
     try:
+        # 데이터 수집 타임아웃 10초 적용
         stock = yf.Ticker(ticker)
-        df = stock.history(period="1y")
-        if len(df) < 100: return None
+        df = stock.history(period="1y", timeout=10)
+        
+        if df is None or len(df) < 100: return None
         
         close = df['Close']
         sma20 = close.rolling(20).mean()
         sma200 = close.rolling(200).mean()
         vol_ma = df['Volume'].rolling(20).mean()
         
-        # 바닥권 공포 지수 (WVF)
+        # WVF (Williams Vix Fix) 공포 지수
         highest_22 = close.rolling(22).max()
         wvf = ((highest_22 - df['Low']) / highest_22) * 100
         wvf_limit = wvf.rolling(50).mean() + (2.1 * wvf.rolling(50).std())
         
-        # OBV 지수 계산
+        # OBV (On-Balance Volume) 계산
         obv = [0]
         for i in range(1, len(df)):
             if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
@@ -56,7 +58,7 @@ def scan_logic(ticker):
             else: obv.append(obv[-1])
         obv_s = pd.Series(obv, index=df.index)
         
-        # 스코어링
+        # Readiness 점수 계산
         p_score = 30 if df['Low'].iloc[-1] <= sma20.iloc[-1] * 1.04 else 0
         t_score = 30 if close.iloc[-1] > sma200.iloc[-1] else 0
         f_score = min((wvf.iloc[-1] / wvf_limit.iloc[-1]) * 25, 25) if wvf_limit.iloc[-1] != 0 else 0
@@ -65,40 +67,39 @@ def scan_logic(ticker):
         readiness = p_score + t_score + f_score + o_score
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1]
         
-        # Signal BUY 필터링 (90% 이상 & 거래량 1.3배 이상)
+        # 최종 Signal BUY 필터링
         if readiness >= 90 and vol_p > 1.3:
             return f"[{ticker}] Readiness: {readiness:.1f}% | Price: ${close.iloc[-1]:.2f} | Vol: {vol_p:.1f}x | OBV: {'UP' if o_score > 0 else 'DN'}"
-    except:
+    except Exception:
         return None
     return None
 
 if __name__ == "__main__":
     start_time = datetime.now()
-    print(f"=== QUANT NEXUS SCAN START: {start_time.strftime('%Y-%m-%d %H:%M:%S')} ===")
+    print(f"=== QUANT NEXUS AUTOMATED SCAN START: {start_time} ===")
     
-    # 중복 제거된 전체 티커 수집
+    # 중복 제거된 전체 티커 리스트 병합
     all_tickers = []
-    for sector_list in SECTORS.values():
-        all_tickers.extend(sector_list)
+    for t_list in SECTORS.values(): all_tickers.extend(t_list)
     all_tickers = list(set(all_tickers))
     
-    print(f"Targeting {len(all_tickers)} tickers across 25 sectors...")
+    print(f"Processing {len(all_tickers)} tickers...")
     
-    # 서버 환경에 맞춰 병렬 처리 (최대 10개 스레드)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # 서버 환경 최적화: 15개 병렬 스레드 사용
+    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
         results = list(executor.map(scan_logic, all_tickers))
     
-    # 결과 필터링 및 출력
-    found_signals = [r for r in results if r]
+    # 신호 포착 결과 정리
+    found = [r for r in results if r]
     
-    print("\n" + "="*50)
-    print(f" 🎯 FINAL SIGNAL RESULTS ({len(found_signals)} stocks found)")
-    print("="*50)
-    
-    if found_signals:
-        for signal in found_signals:
-            print(signal)
+    print("\n" + "="*60)
+    if found:
+        print(f" 🎯 TODAY'S SIGNAL BUY LIST ({len(found)} stocks)")
+        print("-" * 60)
+        for f in found: print(f)
     else:
-        print("No BUY signals detected today.")
-        
-    print("\n=== SCAN COMPLETED SUCCESSFULLY ===")
+        print(" No BUY signals detected in today's scan.")
+    print("="*60)
+    
+    end_time = datetime.now()
+    print(f"\n=== SCAN COMPLETED IN {end_time - start_time} ===")
