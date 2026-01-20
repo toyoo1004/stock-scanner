@@ -2,22 +2,15 @@ import yfinance as yf
 import pandas as pd
 import concurrent.futures
 from datetime import datetime
-import google.generativeai as genai  # 경고를 없애기 위해 라이브러리 호출 방식 유지하며 모델만 최신화
+import google.generativeai as genai
 import os
 
 # === [1. Gemini 3 Flash 설정] ===
-# 코드에 직접 입력하지 말고 아래처럼 수정하세요.
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") 
+# GitHub Secrets에서 키를 가져오도록 설정
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
-def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
-    if not GEMINI_API_KEY:
-        return "API Key가 설정되지 않았습니다."
-    try:
-        # 모델명 확인: 현재 최신 모델명은 'gemini-1.5-flash' 또는 'gemini-1.5-pro'입니다.
-        # preview 모델은 'gemini-1.5-flash-latest' 등으로 접근 가능합니다.
-        model = genai.GenerativeModel('gemini-1.5-flash')
-# === [2. 종목 리스트 정제] (에러 나는 종목 제거 및 최신화) ===
+# === [2. 종목 리스트] ===
 SECTORS = {
     "AI & Tech": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
     "Bio & Health": ["LLY", "NVO", "AMGN", "PFE", "VKTX", "ALT", "GILD", "BMY", "JNJ", "ABBV", "MRK", "BIIB", "REGN", "VRTX", "MRNA", "BNTX", "NVS", "AZN", "SNY", "ALNY", "SRPT", "BMRN", "INCY", "UTHR", "GERN", "CRSP", "EDIT", "NTLA", "BEAM", "AXSM"],
@@ -25,9 +18,11 @@ SECTORS = {
 }
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
+    if not GEMINI_API_KEY:
+        return "AI 분석 불가 (사유: API Key 미설정)"
     try:
-        # 사용자님의 Gemini 3 Flash Preview 모델 명시
-        model = genai.GenerativeModel('gemini-3-flash-preview') 
+        # 모델명을 안정적인 1.5-flash로 설정
+        model = genai.GenerativeModel('gemini-1.5-flash') 
         prompt = f"""
         당신은 월스트리트 출신 퀀트 분석가입니다. {ticker} 종목에 대해 분석하세요.
         - 지표: 현재가 ${price:.2f}, Readiness {readiness:.1f}%, 거래량 {vol_ratio:.1f}배, OBV {obv_status}
@@ -41,18 +36,21 @@ def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
 def scan_logic(ticker):
     try:
         stock = yf.Ticker(ticker)
-        # 데이터가 없는 경우를 대비한 안전 장치
         df = stock.history(period="1y", timeout=15)
         if df is None or df.empty or len(df) < 100:
             return None
         
         close = df['Close']
-        # === [OBV 계산] ===
+        
+        # === [OBV 계산 - 사용자 요청 사항] ===
         obv = [0]
         for i in range(1, len(df)):
-            if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
-            elif close.iloc[i] < close.iloc[i-1]: obv.append(obv[-1] - df['Volume'].iloc[i])
-            else: obv.append(obv[-1])
+            if close.iloc[i] > close.iloc[i-1]: 
+                obv.append(obv[-1] + df['Volume'].iloc[i])
+            elif close.iloc[i] < close.iloc[i-1]: 
+                obv.append(obv[-1] - df['Volume'].iloc[i])
+            else: 
+                obv.append(obv[-1])
         df['OBV'] = obv
         
         # 지표 계산
@@ -63,7 +61,7 @@ def scan_logic(ticker):
         wvf = ((highest_22 - df['Low']) / highest_22) * 100
         wvf_limit = wvf.rolling(50).mean() + (2.1 * wvf.rolling(50).std())
         
-        # OBV 점수 (사용자 요청 핵심)
+        # OBV 점수 반영
         o_score = 15 if df['OBV'].iloc[-1] > pd.Series(obv).rolling(20).mean().iloc[-1] else 0
         readiness = (30 if df['Low'].iloc[-1] <= sma20.iloc[-1] * 1.04 else 0) + \
                     (30 if close.iloc[-1] > sma200.iloc[-1] else 0) + \
@@ -71,12 +69,14 @@ def scan_logic(ticker):
         
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
+        # Readiness 점수가 90점 이상이고 거래량이 터진 경우만 추출
         if readiness >= 90 and vol_p > 1.3:
             obv_status = "상승(Bullish)" if o_score > 0 else "중립"
             analysis = analyze_with_gemini(ticker, readiness, close.iloc[-1], vol_p, obv_status)
-            return f"[{ticker}] Readiness: {readiness:.1f}% | Price: ${close.iloc[-1]:.2f}\n🤖 Gemini 3 분석: {analysis}\n"
+            return f"[{ticker}] Readiness: {readiness:.1f}% | Price: ${close.iloc[-1]:.2f}\n🤖 AI 분석: {analysis}\n"
     except:
         return None
+    return None
 
 if __name__ == "__main__":
     all_tickers = list(set([t for sub in SECTORS.values() for t in sub]))
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     found = [r for r in results if r]
     
     with open("result.txt", "w", encoding="utf-8") as f:
-        f.write(f"=== Gemini 3 Flash AI 주식 분석 리포트 ({datetime.now().strftime('%Y-%m-%d %H:%M')}) ===\n")
+        f.write(f"=== Gemini AI 주식 분석 리포트 ({datetime.now().strftime('%Y-%m-%d %H:%M')}) ===\n")
         f.write(f"수신인: toyoo1004@gmail.com\n\n")
         if found:
             for res in found:
