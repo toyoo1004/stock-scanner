@@ -6,9 +6,16 @@ import google.generativeai as genai  # 경고를 없애기 위해 라이브러�
 import os
 
 # === [1. Gemini 3 Flash 설정] ===
-GEMINI_API_KEY = "AIzaSyD45Cht5i2fiv19NBxdatFZLTDFrkon47A"
+GEMINI_API_KEY = "AIzaSyD82WedQVrGDRPaEY2HUGe57pr6MLCLhZg"
 genai.configure(api_key=GEMINI_API_KEY)
 
+def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
+    if not GEMINI_API_KEY:
+        return "API Key가 설정되지 않았습니다."
+    try:
+        # 모델명 확인: 현재 최신 모델명은 'gemini-1.5-flash' 또는 'gemini-1.5-pro'입니다.
+        # preview 모델은 'gemini-1.5-flash-latest' 등으로 접근 가능합니다.
+        model = genai.GenerativeModel('gemini-1.5-flash')
 # === [2. 종목 리스트 정제] (에러 나는 종목 제거 및 최신화) ===
 SECTORS = {
     "AI & Tech": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
