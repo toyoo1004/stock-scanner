@@ -1,8 +1,8 @@
 name: Daily Stock Scan
 on:
   schedule:
-    - cron: '40 20 * * *' # 한국 시간 오전 5시 40분 (UTC 20:40)
-  workflow_dispatch: # 수동으로도 실행 가능하게 함
+    - cron: '40 20 * * *' # 한국 시간 오전 5시 40분
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,7 +12,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.11' # <--- 이 부분을 3.9에서 3.11로 수정하세요!
       - name: Install dependencies
         run: pip install yfinance pandas xlsxwriter
       - name: Run Scanner
