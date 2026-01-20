@@ -2,9 +2,14 @@ import yfinance as yf
 import pandas as pd
 import concurrent.futures
 from datetime import datetime
-import sys
+import google.generativeai as genai
 
-# === [25개 섹터 티커 리스트] ===
+# === [1. Gemini AI 설정] ===
+GEMINI_API_KEY = "AIzaSyD45Cht5i2fiv19NBxdatFZLTDFrkon47A"
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# === [2. 25개 섹터 티커 리스트] ===
 SECTORS = {
     "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
     "2. Semiconductors": ["TSM", "AVGO", "AMD", "INTC", "ASML", "AMAT", "LRCX", "MU", "QCOM", "ADI", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
@@ -33,73 +38,84 @@ SECTORS = {
     "25. Space": ["SPCE", "RKLB", "ASTS", "BKSY", "PL", "SPIR", "LUNR", "VSAT", "IRDM", "JOBY", "ACHR", "UP", "MNTS", "RDW", "SIDU", "LLAP", "VORB", "ASTR", "DCO", "TL0", "BA", "LMT", "NOC", "RTX", "LHX", "GD", "HII", "LDOS", "TXT", "HWM"]
 }
 
+# === [3. Gemini 분석 함수] ===
+def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
+    prompt = f"""
+    당신은 전문 주식 분석가입니다. 아래 데이터를 바탕으로 {ticker} 종목에 대한 투자 의견을 3문장 이내로 한국어로 작성하세요.
+    - 현재가: ${price:.2f}
+    - 매수 준비도(Readiness): {readiness:.1f}%
+    - 평소 대비 거래량: {vol_ratio:.1f}배 폭발
+    - OBV 상태: {obv_status} (최근 20일 평균 대비 상승 여부)
+    - 요청: 이 종목이 왜 'Signal BUY'로 선정되었는지 기술적 이유를 포함하고, 주의할 점도 언급하세요.
+    """
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception:
+        return "Gemini 분석 중 오류가 발생했습니다."
+
+# === [4. 스캔 로직] ===
 def scan_logic(ticker):
     try:
         stock = yf.Ticker(ticker)
-        # 타임아웃을 15초로 늘려 안정성 확보
         df = stock.history(period="1y", timeout=15)
-        
-        if df is None or len(df) < 100:
-            return None
+        if df is None or len(df) < 100: return None
         
         close = df['Close']
-        # OBV 계산
         obv = [0]
         for i in range(1, len(df)):
-            if close.iloc[i] > close.iloc[i-1]:
-                obv.append(obv[-1] + df['Volume'].iloc[i])
-            elif close.iloc[i] < close.iloc[i-1]:
-                obv.append(obv[-1] - df['Volume'].iloc[i])
-            else:
-                obv.append(obv[-1])
+            if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
+            elif close.iloc[i] < close.iloc[i-1]: obv.append(obv[-1] - df['Volume'].iloc[i])
+            else: obv.append(obv[-1])
         df['OBV'] = obv
         
-        # 보조지표
         sma20 = close.rolling(20).mean()
         sma200 = close.rolling(200).mean()
         vol_ma = df['Volume'].rolling(20).mean()
         
-        # WVF
         highest_22 = close.rolling(22).max()
         wvf = ((highest_22 - df['Low']) / highest_22) * 100
         wvf_limit = wvf.rolling(50).mean() + (2.1 * wvf.rolling(50).std())
         
-        # 스코어링
         p_score = 30 if df['Low'].iloc[-1] <= sma20.iloc[-1] * 1.04 else 0
         t_score = 30 if close.iloc[-1] > sma200.iloc[-1] else 0
         f_score = min((wvf.iloc[-1] / wvf_limit.iloc[-1]) * 25, 25) if wvf_limit.iloc[-1] != 0 else 0
-        o_score = 15 if df['OBV'].iloc[-1] > df['OBV'].rolling(20).mean().iloc[-1] else 0
+        obv_avg = df['OBV'].rolling(20).mean().iloc[-1]
+        o_score = 15 if df['OBV'].iloc[-1] > obv_avg else 0
         
         readiness = p_score + t_score + f_score + o_score
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
         if readiness >= 90 and vol_p > 1.3:
-            return f"[{ticker}] Readiness: {readiness:.1f}% | Price: ${close.iloc[-1]:.2f} | Vol: {vol_p:.1f}x"
-    except Exception as e:
+            obv_status = "상승(UP)" if o_score > 0 else "하락(DN)"
+            analysis = analyze_with_gemini(ticker, readiness, close.iloc[-1], vol_p, obv_status)
+            return {
+                "ticker": ticker,
+                "readiness": readiness,
+                "price": close.iloc[-1],
+                "analysis": analysis
+            }
+    except Exception:
         return None
     return None
 
 if __name__ == "__main__":
-    print(f"=== SCAN START: {datetime.now()} ===")
-    
-    # 티커 추출 및 중복 제거
+    print(f"=== QUANT NEXUS AI SCAN START: {datetime.now()} ===")
     all_tickers = []
-    for t_list in SECTORS.values():
-        all_tickers.extend(t_list)
+    for t_list in SECTORS.values(): all_tickers.extend(t_list)
     unique_tickers = list(set(all_tickers))
     
-    # 병렬 처리 (서버 부하 조절을 위해 10개로 제한)
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(scan_logic, unique_tickers))
     
     found = [r for r in results if r]
-    
-    print("\n" + "="*50)
+    print("\n" + "="*70)
     if found:
-        print(f"🎯 SIGNAL BUY DETECTED ({len(found)} stocks):")
-        for f in found:
-            print(f)
+        print(f"🎯 TODAY'S SIGNAL BUY & AI ANALYSIS ({len(found)} stocks)")
+        for res in found:
+            print(f"\n[{res['ticker']}] Readiness: {res['readiness']:.1f}% | Price: ${res['price']:.2f}")
+            print(f"🤖 AI 분석: {res['analysis']}")
+            print("-" * 70)
     else:
-        print("No signals found.")
-    print("="*50)
-    print(f"=== SCAN END: {datetime.now()} ===")
+        print("No BUY signals detected today.")
+    print("="*70)
