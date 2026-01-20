@@ -26,7 +26,7 @@ def update_google_sheet_combined(found_data):
         worksheet = sh.get_worksheet(0)
         
         combined_report = ""
-        # 준비도 높은 순으로 정렬하여 리포트 생성
+        # 준비도 높은 순서로 정렬
         for item in sorted(found_data, key=lambda x: x['readiness'], reverse=True):
             readiness_fmt = f"{item['readiness']:.2f}%"
             combined_report += f"[{item['ticker']}] {readiness_fmt} | ${item['price']}\n"
@@ -34,39 +34,35 @@ def update_google_sheet_combined(found_data):
             combined_report += "=" * 45 + "\n"
 
         now = datetime.now().strftime('%Y-%m-%d %H:%M')
-        # 한 줄(Cell)에 모든 분석 내용을 입력
         worksheet.append_row([now, f"{len(found_data)}개 종목 포착", combined_report])
-        print("✅ 구글 시트에 상세 리포트 전송 성공!")
+        print("✅ 구글 시트 업데이트 완료!")
     except Exception as e:
-        print(f"❌ 시트 업데이트 오류: {e}")
+        print(f"❌ 시트 업데이트 실패: {e}")
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
     try:
         model = genai.GenerativeModel('gemini-1.5-flash') 
-        # 오후 6:38에 만족하셨던 상세 분석 프롬프트
+        # 오후 6:38 상세 분석 스타일 프롬프트
         prompt = f"""
-        당신은 주식 시장 수급 전문가입니다. {ticker} 종목을 분석하세요.
-        - 현재가: ${price:.2f}
-        - 기술적 준비도: {readiness:.2f}%
-        - 거래량 폭발: 평소 대비 {vol_ratio:.1f}배
-        - OBV(거래량 지표): {obv_status}
-        
-        위 데이터를 근거로 매수 추천 이유를 1, 2, 3번 번호를 붙여 아주 상세하고 전문적으로 한국어로 작성하세요. 
-        단순 요약이 아니라 기관의 매집이나 기술적 돌파 가능성을 구체적으로 언급해 주세요.
+        주식 수급 전문가로서 {ticker} 분석 리포트를 작성하세요.
+        조건: 현재가 ${price:.2f}, 준비도 {readiness:.2f}%, 거래량 {vol_ratio:.1f}배, OBV {obv_status}.
+        매수 추천 이유를 1, 2, 3번 번호를 붙여 아주 상세하게 한국어로 작성하세요. 
+        기술적 지표와 수급의 연관성을 강조하여 전문적인 통찰을 제공하세요.
         """
         response = model.generate_content(prompt, generation_config={"temperature": 0.2})
         return response.text.strip()
-    except:
-        return "AI 분석 지연 중입니다."
+    except: return "AI 분석 지연 중"
 
 def scan_logic(ticker):
     try:
         stock = yf.Ticker(ticker)
+        # 에러 방지를 위해 period="1y" 대신 데이터 유무를 먼저 체크
         df = stock.history(period="1y", timeout=10)
-        if df is None or len(df) < 100: return None
+        if df is None or df.empty or len(df) < 100: 
+            return None
         
         close = df['Close']
-        # [2026-01-19] OBV 상시 계산 요청 반영
+        # OBV 상시 계산
         obv = [0]
         for i in range(1, len(df)):
             if close.iloc[i] > close.iloc[i-1]: obv.append(obv[-1] + df['Volume'].iloc[i])
@@ -87,35 +83,35 @@ def scan_logic(ticker):
         
         vol_p = df['Volume'].iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] != 0 else 0
         
-        # 신호 포착 기준 (준비도 90%, 거래량 1.3배 이상 - 필요 시 조정 가능)
-        if readiness >= 90 and vol_p > 1.3:
-            obv_status = "강력 우상향 (기관 매집 징후)" if o_score > 0 else "보통"
+        # 신호 포착 기준 (준비도 90% 이상)
+        if readiness >= 90 and vol_p > 1.2:
+            obv_status = "상승 강세(기관 매집 확인)" if o_score > 0 else "보통"
             analysis = analyze_with_gemini(ticker, readiness, close.iloc[-1], vol_p, obv_status)
             return {'ticker': ticker, 'readiness': readiness, 'price': round(close.iloc[-1], 2), 'analysis': analysis}
     except: return None
 
 if __name__ == "__main__":
-    # 요청하신 25개 카테고리 전체 리스트
+    # [수정] 에러 발생한 티커(PARA, ATVI, SQ 등) 제외 및 최신 티커 반영
     raw_sectors = {
         "1. AI & Cloud": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
-        "2. Semiconductors": ["NVDA", "TSM", "AVGO", "AMD", "INTC", "ASML", "AMAT", "LRCX", "MU", "QCOM", "ADI", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
-        "3. Rare Earth": ["MP", "UUUU", "LAC", "ALTM", "SGML", "PLL", "LTHM", "REMX", "TMC", "NB", "TMQ", "TMRC", "UAMY", "AREC", "IDR", "RIO", "BHP", "VALE", "FCX", "SCCO", "AA", "CENX", "KALU", "CRS", "ATI", "HAYW", "LYC.AX", "ARU.AX", "ASM.AX"],
-        "4. Weight Loss & Bio": ["LLY", "NVO", "AMGN", "PFE", "VKTX", "ALT", "ZP", "GILD", "BMY", "JNJ", "ABBV", "MRK", "BIIB", "REGN", "VRTX", "MRNA", "BNTX", "NVS", "AZN", "SNY", "ALNY", "SRPT", "BMRN", "INCY", "UTHR", "GERN", "CRSP", "EDIT", "NTLA", "BEAM", "SAGE", "ITCI", "AXSM"],
-        "5. Fintech & Crypto": ["COIN", "MSTR", "HOOD", "SQ", "PYPL", "SOFI", "AFRM", "UPST", "MARA", "RIOT", "CLSK", "HUT", "WULF", "CIFR", "BTBT", "IREN", "CORZ", "SDIG", "GREE", "BITF", "V", "MA", "AXP", "DFS", "COF", "NU", "DAVE", "LC", "GLBE", "BILL", "TOST", "MQ", "FOUR"],
+        "2. Semiconductors": ["TSM", "ASML", "AMAT", "LRCX", "MU", "QCOM", "TXN", "MRVL", "KLAC", "NXPI", "STM", "ON", "MCHP", "MPWR", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "COHR", "IPGP", "LSCC", "RMBS", "FORM", "ACLS", "CAMT", "UCTT", "ICHR", "AEHR", "GFS"],
+        "3. Rare Earth": ["MP", "UUUU", "LAC", "SGML", "PLL", "REMX", "TMC", "NB", "TMQ", "TMRC", "UAMY", "AREC", "IDR", "RIO", "BHP", "VALE", "FCX", "SCCO", "AA", "CENX", "KALU", "CRS", "ATI", "HAYW"],
+        "4. Weight Loss & Bio": ["LLY", "NVO", "AMGN", "PFE", "VKTX", "ALT", "GILD", "BMY", "JNJ", "ABBV", "MRK", "BIIB", "REGN", "VRTX", "MRNA", "BNTX", "NVS", "AZN", "SNY", "ALNY", "SRPT", "BMRN", "INCY", "UTHR", "GERN", "CRSP", "EDIT", "NTLA", "BEAM", "SAGE", "ITCI", "AXSM"],
+        "5. Fintech & Crypto": ["COIN", "MSTR", "HOOD", "PYPL", "SOFI", "AFRM", "UPST", "MARA", "RIOT", "CLSK", "HUT", "WULF", "CIFR", "BTBT", "IREN", "CORZ", "SDIG", "GREE", "BITF", "V", "MA", "AXP", "DFS", "COF", "NU", "DAVE", "LC", "GLBE", "BILL", "TOST", "MQ", "FOUR"],
         "6. Defense & Space": ["RTX", "LMT", "NOC", "GD", "BA", "LHX", "HII", "LDOS", "TXT", "HWM", "AXON", "KTOS", "AVAV", "RKLB", "SPCE", "ASTS", "LUNR", "PL", "SPIR", "BKSY", "VSAT", "IRDM", "SAIC", "CACI", "CW", "HEI", "TDY", "AJRD", "MTSI", "RCAT", "SHLD"],
-        "7. Uranium & Nuclear": ["CCJ", "NXE", "UEC", "DNN", "SMR", "BWXT", "LEU", "OKLO", "FLR", "URA", "URNM", "NLR", "SRUUF", "FCU", "GLO", "PDN", "BOE", "DYL", "PENMF", "CEG", "PEG", "EXC", "D", "SO", "NEE", "DUK", "ETR", "PCG", "VST"],
-        "8. Consumer & Luxury": ["LVMUY", "RACE", "NKE", "LULU", "ONON", "DECK", "CROX", "SKX", "RL", "TPR", "CPRI", "PVH", "VFC", "UAA", "COLM", "GPS", "ANF", "AEO", "URBN", "ROST", "TJX", "HESAY", "CFRUY", "PPRUY", "BURBY", "BOSS.DE", "EL", "COTY", "ULTA", "ELF"],
+        "7. Uranium & Nuclear": ["CCJ", "UUUU", "NXE", "UEC", "DNN", "SMR", "BWXT", "LEU", "OKLO", "FLR", "URA", "URNM", "NLR", "SRUUF", "FCU", "GLO", "PDN", "BOE", "DYL", "PENMF", "CEG", "PEG", "EXC", "D", "SO", "NEE", "DUK", "ETR", "PCG", "VST"],
+        "8. Consumer & Luxury": ["LVMUY", "RACE", "NKE", "LULU", "ONON", "DECK", "CROX", "RL", "TPR", "CPRI", "PVH", "VFC", "UAA", "COLM", "GPS", "ANF", "AEO", "URBN", "ROST", "TJX", "HESAY", "CFRUY", "PPRUY", "BURBY", "BOSS.DE", "EL", "COTY", "ULTA", "ELF"],
         "9. Meme & Reddit": ["GME", "AMC", "RDDT", "DJT", "TSLA", "PLTR", "SOFI", "OPEN", "LCID", "RIVN", "CHPT", "NKLA", "SPCE", "TLRY", "CGC", "SNDL", "BB", "NOK", "KOSS", "EXPR", "MULN", "FFIE", "HOLO", "GNS", "CVNA", "AI", "BIG", "RAD", "WISH", "CLOV"],
         "10. Quantum": ["IONQ", "RGTI", "QUBT", "HON", "IBM", "MSFT", "GOOGL", "INTC", "FORM", "AMAT", "ASML", "KEYS", "ADI", "TXN", "NVDA", "AMD", "QCOM", "AVGO", "TSM", "MU", "D-WAVE", "ARQQ", "QBTS", "QMCO"],
-        "11. Robotics": ["ISRG", "TER", "PATH", "SYM", "RKLY", "ABB", "CGNX", "ROCK", "ATSG", "BRKS", "TKR", "ROBO", "BOTZ", "IRBT", "NVDA", "TSLA", "DE", "CAT", "EMR", "PH", "FANUC", "YASKY", "KUKAY", "SIEGY"],
+        "11. Robotics": ["ISRG", "TER", "PATH", "SYM", "ABB", "CGNX", "ROCK", "ATSG", "ROBO", "BOTZ", "IRBT", "NVDA", "TSLA", "DE", "CAT", "EMR", "PH", "FANUC", "YASKY", "KUKAY", "SIEGY"],
         "12. Biotech Growth": ["VRTX", "AMGN", "MRNA", "BNTX", "REGN", "GILD", "BIIB", "ILMN", "CRSP", "BEAM", "NTLA", "EDIT", "NVTA", "ARWR", "IONS", "SRPT", "BMRN", "INCY", "UTHR", "EXEL", "HALO", "TECH", "WST", "RGEN", "TXG", "PACB", "QGEN", "GMAB", "ARGX", "BGNE"],
         "13. E-commerce": ["AMZN", "WMT", "COST", "HD", "SHOP", "MELI", "BABA", "PDD", "EBAY", "ETSY", "CPNG", "SE", "JMIA", "JD", "VIPS", "TGT", "LOW", "BBY", "M", "KSS", "JWN", "GPS", "ANF", "AEO", "URBN", "ROST", "TJX", "DLTR", "DG", "BJ"],
-        "14. Gaming": ["RBLX", "U", "EA", "TTWO", "SONY", "NTES", "ATVI", "SE", "PLTK", "SKLZ", "EDR", "MSFT", "NVDA", "GME", "UBSFY", "NCBDY", "TCEHY", "BILI", "DOYU", "HUYA", "CRSR", "LOGI", "HEAR", "ZNGA"],
-        "15. Media": ["NFLX", "DIS", "WBD", "PARA", "SPOT", "ROKU", "AMC", "CNK", "LYV", "MSG", "TKO", "FOXA", "CMCSA", "IQ", "FUBO", "GOOGL", "AMZN", "AAPL", "SIRI", "LGF-A", "WMG", "UMG", "TR", "NXST", "SBGI"],
+        "14. Gaming": ["RBLX", "U", "EA", "TTWO", "SONY", "NTES", "SE", "PLTK", "SKLZ", "EDR", "MSFT", "NVDA", "GME", "UBSFY", "NCBDY", "TCEHY", "BILI", "DOYU", "HUYA", "CRSR", "LOGI", "HEAR"],
+        "15. Media": ["NFLX", "DIS", "WBD", "SPOT", "ROKU", "AMC", "CNK", "LYV", "TKO", "FOXA", "CMCSA", "IQ", "FUBO", "GOOGL", "AMZN", "AAPL", "SIRI", "LGF-A", "WMG", "UMG", "TR", "NXST", "SBGI"],
         "16. Banking": ["JPM", "BAC", "WFC", "C", "GS", "MS", "HSBC", "RY", "TD", "UBS", "NU", "SOFI", "ALLY", "FITB", "HBAN", "USB", "PNC", "TFC", "COF", "AXP", "V", "MA", "DFS", "SYF", "KEY", "CFG", "RF", "MTB", "CMA", "ZION"],
         "17. Energy": ["XOM", "CVX", "COP", "SLB", "EOG", "MPC", "OXY", "PSX", "VLO", "HAL", "BKR", "HES", "DVN", "FANG", "MRO", "APA", "CTRA", "PXD", "WMB", "KMI", "OKE", "TRGP", "LNG", "EQT", "RRC", "SWN", "CHK", "MTDR", "PDCE", "CIVI"],
         "18. Renewables": ["ENPH", "SEDG", "FSLR", "NEE", "BEP", "RUN", "ARRY", "CSIQ", "DQ", "JKS", "MAXN", "SPWR", "NOVA", "SHLS", "GEV", "CWEN", "AY", "HASI", "ORA", "TPIC", "BLDP", "PLUG", "FCEL", "BE", "AMRC", "STEM", "FLNC", "AES", "CEG", "VST"],
-        "19. Gold": ["GOLD", "NEM", "KL", "AU", "GDX", "GDXJ", "AEM", "FNV", "WPM", "KGC", "PAAS", "MAG", "SAND", "OR", "PHYS", "HMY", "GFI", "IAG", "NGD", "EGO", "DRD", "SBSW", "CDE", "HL", "AG", "EXK", "FSM", "MUX", "USAS", "GORO"],
+        "19. Gold": ["GOLD", "NEM", "AU", "GDX", "GDXJ", "AEM", "FNV", "WPM", "KGC", "PAAS", "MAG", "SAND", "OR", "PHYS", "HMY", "GFI", "IAG", "NGD", "EGO", "DRD", "SBSW", "CDE", "HL", "AG", "EXK", "FSM", "MUX", "USAS", "GORO"],
         "20. Industrial": ["UPS", "FDX", "CAT", "DE", "HON", "GE", "MMM", "UNP", "EMR", "ITW", "PH", "ETN", "NSC", "CSX", "CMI", "ROK", "AME", "DOV", "XYL", "TT", "CARR", "OTIS", "JCI", "LII", "GWW", "FAST", "URI", "PWR", "EME", "ACM"],
         "21. REITs": ["AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "WELL", "AVB", "EQR", "VTR", "ARE", "SPG", "WY", "SBAC", "VICI", "GLPI", "IRM", "MAA", "ESS", "UDR", "CPT", "INVH", "AMH", "SUI", "ELS", "LAMR", "OUT", "KIM", "REG"],
         "22. Travel": ["BKNG", "ABNB", "MAR", "H", "RCL", "CCL", "NCLH", "DAL", "UAL", "LUV", "EXPE", "TRIP", "MGM", "WYNN", "CZR", "LVS", "PENN", "DKNG", "BYD", "CHH", "WH", "HLT", "IHG", "VAC", "TNL", "PLYA", "SAVE", "JBLU", "ALK", "HA"],
@@ -124,13 +120,13 @@ if __name__ == "__main__":
         "25. Space": ["SPCE", "RKLB", "ASTS", "BKSY", "PL", "SPIR", "LUNR", "VSAT", "IRDM", "JOBY", "ACHR", "UP", "MNTS", "RDW", "SIDU", "LLAP", "VORB", "ASTR", "DCO", "TL0", "BA", "LMT", "NOC", "RTX", "LHX", "GD", "HII", "LDOS", "TXT", "HWM"]
     }
 
-    # 각 섹터에서 상위 10개씩 추출 (총 약 250개 종목 분석)
+    # 각 섹터 상위 10개 추출 (약 230개 종목)
     all_tickers = []
-    for sector, t_list in raw_sectors.items():
+    for t_list in raw_sectors.values():
         all_tickers.extend(t_list[:10]) 
     
     all_tickers = list(set(all_tickers))
-    print(f"🚀 총 {len(all_tickers)}개 종목 분석 시작...")
+    print(f"🚀 총 {len(all_tickers)}개 핵심 종목 분석 시작...")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(scan_logic, all_tickers))
@@ -139,4 +135,4 @@ if __name__ == "__main__":
     if found:
         update_google_sheet_combined(found)
     else:
-        print("현재 조건을 만족하는 급등 징후 종목이 없습니다.")
+        print("현재 조건을 만족하는(준비도 90% 이상) 종목이 없습니다.")
