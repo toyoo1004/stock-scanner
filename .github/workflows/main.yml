@@ -7,6 +7,7 @@ on:
 
     # ✅ 본 실행용 (종가 매수): KST 05:40 ~ 05:45
     - cron: '40-45 20 * * *'
+
   workflow_dispatch:
 
 jobs:
@@ -22,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 🔥 핵심: KST 시간 윈도우 체크 (cron 오차 완전 방어)
+      # 🔥 KST 시간 윈도우 체크 (cron 오차 완전 방어)
       - name: Time window check (KST)
         run: |
           HOUR=$(TZ=Asia/Seoul date +%H)
@@ -30,37 +31,35 @@ jobs:
 
           NOW=$((10#$HOUR * 60 + 10#$MIN))
 
-          TEST_START=$((16 * 60 + 10))   # 16:10
-          TEST_END=$((16 * 60 + 15))     # 16:15
+          TEST_START=$((16 * 60 + 10))
+          TEST_END=$((16 * 60 + 15))
 
-          MAIN_START=$((5 * 60 + 40))   # 05:40
-          MAIN_END=$((5 * 60 + 45))     # 05:45
-
-          echo "🕒 Current KST time: ${HOUR}:${MIN} (minutes=$NOW)"
+          MAIN_START=$((5 * 60 + 40))
+          MAIN_END=$((5 * 60 + 45))
 
           if (( NOW >= TEST_START && NOW <= TEST_END )); then
-            echo "✅ 테스트 실행 시간"
             exit 0
           fi
 
           if (( NOW >= MAIN_START && NOW <= MAIN_END )); then
-            echo "✅ 본 실행 시간 (종가 매수)"
             exit 0
           fi
 
-          echo "⏭ 실행 시간 아님 → 종료"
           exit 1
 
       - name: Install dependencies
         run: |
-          pip install --upgrade yfinance pandas google-generativeai
+          pip install --upgrade pip
+          pip install yfinance pandas google-generativeai
 
+      # 🚫 로그에 키 출력 금지 (환경변수만 주입)
       - name: Run Scanner
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python scanner.py
+        run: |
+          python scanner.py
 
-      # 📧 스캐너 정상 실행 시에만 메일 발송
+      # 📧 성공 시에만 메일 발송
       - name: Send Mail
         if: success()
         uses: dawidd6/action-send-mail@v3
