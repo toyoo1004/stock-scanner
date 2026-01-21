@@ -32,20 +32,79 @@ model = genai.GenerativeModel(
 # ===============================
 
 SECTORS = {
-    "AI & Big Tech": [
-        "NVDA","MSFT","GOOGL","AMZN","META","AAPL","AVGO","AMD","INTC","QCOM",
-        "IBM","ORCL","CSCO","ADBE","CRM","NOW","PLTR","SNOW","DDOG","MDB","NET",
-        "SMCI","ARM","PATH","AI","SOUN","BBAI","MU","LRCX","AMAT","ADI","ASML","TSM"
+    "1. AI & Big Tech": [
+        "NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META", "AVGO", "ORCL",
+        "IBM", "INTC", "QCOM", "AMD", "CSCO", "DELL", "HPQ", "SMCI"
     ],
-    "Bio & Pharma": [
-        "LLY","NVO","AMGN","PFE","GILD","BMY","JNJ","ABBV","MRK","BIIB","REGN","VRTX",
-        "MRNA","BNTX","NVS","AZN","SNY","ALNY","SRPT","BMRN","INCY","UTHR","GERN",
-        "CRSP","EDIT","NTLA","BEAM","AXSM"
+
+    "2. Semiconductors": [
+        "NVDA", "TSM", "AVGO", "AMD", "ASML", "AMAT", "LRCX", "MU",
+        "ADI", "TXN", "QCOM", "INTC", "KLAC", "MRVL", "NXPI", "ON"
     ],
-    "Financials & Energy": [
-        "JPM","BAC","WFC","C","GS","MS","COF","AXP","V","MA",
-        "XOM","CVX","COP","SLB","EOG","MPC","OXY","PSX","VLO","HAL",
-        "BKR","FANG","APA","CTRA","WMB","KMI","OKE","TRGP","LNG","EQT"
+
+    "3. Cloud & Software": [
+        "MSFT", "CRM", "NOW", "ADBE", "SNOW", "DDOG", "PANW", "CRWD",
+        "MDB", "NET", "TEAM", "WDAY", "ZS", "OKTA", "SPLK", "ESTC"
+    ],
+
+    "4. Cybersecurity": [
+        "PANW", "CRWD", "FTNT", "NET", "ZS", "OKTA", "CHKP", "QLYS",
+        "TENB", "RPD", "S", "GEN", "VRNS", "CYBR", "BUG", "CIBR"
+    ],
+
+    "5. Fintech & Payments": [
+        "V", "MA", "AXP", "COF", "PYPL", "SQ", "SOFI", "HOOD",
+        "DFS", "SYF", "ALLY", "NU", "AFRM", "UPST", "LC", "DAVE"
+    ],
+
+    "6. Consumer & Retail": [
+        "AMZN", "COST", "WMT", "HD", "NKE", "LULU", "TJX", "MCD",
+        "LOW", "SBUX", "TGT", "ROST", "CMG", "YUM", "DG", "DLTR"
+    ],
+
+    "7. Healthcare & Pharma": [
+        "LLY", "NVO", "JNJ", "MRK", "ABBV", "AMGN", "PFE", "UNH",
+        "BMY", "GILD", "REGN", "VRTX", "BIIB", "MRNA", "TMO", "DHR"
+    ],
+
+    "8. Energy (Oil & Gas)": [
+        "XOM", "CVX", "COP", "SLB", "EOG", "OXY", "MPC", "VLO",
+        "PSX", "HAL", "BKR", "HES", "DVN", "FANG", "APA", "CTRA"
+    ],
+
+    "9. Industrials": [
+        "CAT", "DE", "GE", "HON", "ETN", "UPS", "UNP", "RTX",
+        "EMR", "ITW", "PH", "ROK", "AME", "DOV", "XYL", "TT"
+    ],
+
+    "10. Defense & Aerospace": [
+        "RTX", "LMT", "NOC", "GD", "LHX", "BA", "TDY", "HII",
+        "HEI", "TXT", "CW", "AJRD", "MTSI", "SAIC", "CACI", "LDOS"
+    ],
+
+    "11. Communication & Media": [
+        "GOOGL", "META", "NFLX", "DIS", "CMCSA", "TKO", "FOXA", "WBD",
+        "PARA", "SPOT", "ROKU", "LYV", "MSG", "NXST", "SBGI", "SIRI"
+    ],
+
+    "12. Financials (Banks)": [
+        "JPM", "BAC", "WFC", "GS", "MS", "C", "PNC", "USB",
+        "TFC", "FITB", "HBAN", "CFG", "KEY", "RF", "MTB", "ZION"
+    ],
+
+    "13. Utilities & Power": [
+        "NEE", "SO", "DUK", "EXC", "AEP", "XEL", "CEG", "VST",
+        "PEG", "D", "ETR", "PCG", "AES", "ED", "FE", "NRG"
+    ],
+
+    "14. REITs": [
+        "AMT", "PLD", "EQIX", "O", "PSA", "DLR", "WELL", "SPG",
+        "CCI", "SBAC", "VTR", "ARE", "AVB", "EQR", "IRM", "VICI"
+    ],
+
+    "15. Travel & Leisure": [
+        "BKNG", "ABNB", "MAR", "DAL", "UAL", "RCL", "LUV", "EXPE",
+        "NCLH", "CCL", "HLT", "IHG", "MGM", "WYNN", "CZR", "DKNG"
     ]
 }
 
