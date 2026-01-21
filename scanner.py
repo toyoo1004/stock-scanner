@@ -108,12 +108,20 @@ SECTORS = {
     ]
 }
 
+네, 요청하신 대로 모델명을 **models/gemini-2.5-flash**로 완전히 고정하고, SyntaxError가 발생하지 않도록 try-except 구문을 완벽하게 보정했습니다.
+
+현재 사용하시는 라이브러리 환경에서 해당 모델명을 지원한다면 이 코드가 가장 정확하게 작동할 것입니다.
+
+🛠️ 수정된 scanner.py 핵심 코드 (모델명 고정 및 에러 수정)
+Python
+
 # ===============================
-# 3️⃣ Gemini 분석 (완전 무로그)
+# 3️⃣ Gemini 분석 (모델명: gemini-2.5-flash 고정)
 # ===============================
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
-   try:
+    try:
+        # 모델명을 사용자가 요청하신 'models/gemini-2.5-flash'로 고정합니다.
         model = genai.GenerativeModel(
             model_name="models/gemini-2.5-flash",
             generation_config={
@@ -143,9 +151,13 @@ OBV 상태: {obv_status}
             return response.text.strip()
         else:
             return "AI 분석 결과 없음"
+            
+    except Exception as e:
+        # SyntaxError를 방지하기 위해 반드시 필요한 예외 처리 블록입니다.
+        return f"AI 분석 일시 지연 (사유: {str(e)[:50]})"
 
 # ===============================
-# 4️⃣ 스캔 로직
+# 4️⃣ 스캔 로직 (OBV 계산 및 점수 산출)
 # ===============================
 
 def scan_logic(ticker):
@@ -157,7 +169,7 @@ def scan_logic(ticker):
         close = df["Close"]
         volume = df["Volume"]
 
-        # OBV
+        # === [OBV 계산: 사용자 필수 요청 사항] ===
         obv = [0]
         for i in range(1, len(df)):
             if close.iloc[i] > close.iloc[i-1]:
@@ -168,26 +180,32 @@ def scan_logic(ticker):
                 obv.append(obv[-1])
 
         df["OBV"] = obv
-
+        
+        # 이동평균선 및 거래량 지표
         sma20 = close.rolling(20).mean()
         sma200 = close.rolling(200).mean()
         vol_ma = volume.rolling(20).mean()
 
+        # Williams Vix Fix (WVF) 지표 계산
         highest_22 = close.rolling(22).max()
         wvf = ((highest_22 - df["Low"]) / highest_22) * 100
         wvf_limit = wvf.rolling(50).mean() + 2.1 * wvf.rolling(50).std()
 
-        obv_score = 15 if df["OBV"].iloc[-1] > pd.Series(obv).rolling(20).mean().iloc[-1] else 0
+        # OBV 점수: OBV가 20일 이동평균보다 높을 때 15점 가산
+        obv_series = pd.Series(obv, index=df.index)
+        obv_score = 15 if obv_series.iloc[-1] > obv_series.rolling(20).mean().iloc[-1] else 0
 
+        # Readiness 최종 점수 합산
         readiness = (
-            (30 if df["Low"].iloc[-1] <= sma20.iloc[-1] * 1.04 else 0) +
-            (30 if close.iloc[-1] > sma200.iloc[-1] else 0) +
-            min((wvf.iloc[-1] / wvf_limit.iloc[-1]) * 25, 25) +
-            obv_score
+            (30 if df["Low"].iloc[-1] <= sma20.iloc[-1] * 1.04 else 0) + # 20일선 근접
+            (30 if close.iloc[-1] > sma200.iloc[-1] else 0) +           # 200일선 위 (정배열)
+            min((wvf.iloc[-1] / wvf_limit.iloc[-1]) * 25, 25) +         # 변동성 바닥 확인
+            obv_score                                                   # 수급 확인
         )
 
         vol_ratio = volume.iloc[-1] / vol_ma.iloc[-1] if vol_ma.iloc[-1] else 0
 
+        # 신호 포착: 점수 90점 이상 & 거래량 1.3배 이상
         if readiness >= 90 and vol_ratio > 1.3:
             obv_status = "상승(Bullish)" if obv_score > 0 else "중립"
             ai_text = analyze_with_gemini(
