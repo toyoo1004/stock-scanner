@@ -3,7 +3,7 @@ name: Daily Stock Scan
 on:
   schedule:
     # ✅ 테스트용: KST 16:00 ~ 16:05
-    - cron: '0-5 7 * * *'
+    - cron: '7-10 7 * * *'
 
     # ✅ 본 실행용 (종가 매수): KST 05:40 ~ 05:45
     - cron: '40-45 20 * * *'
