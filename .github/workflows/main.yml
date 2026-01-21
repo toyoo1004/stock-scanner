@@ -1,7 +1,7 @@
 name: Daily Stock Scan
 on:
   schedule:
-    - cron: '8 6 * * *'     # 테스트용: KST 15:08 (오후 3시 8분)
+    - cron: '50 6 * * *'     # 테스트용: KST 15:08 (오후 3시 8분)
     - cron: '40 20 * * *'   # 본 실행: KST 05:40
     - cron: '45 20 * * *'   # 본 실행: KST 05:45
   workflow_dispatch:
