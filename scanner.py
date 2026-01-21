@@ -43,7 +43,7 @@ def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
         model = genai.GenerativeModel(
             model_name="models/gemini-2.5-flash",
             generation_config={
-                "max_output_tokens": 500,
+                "max_output_tokens": 1500,
                 "temperature": 0.7,
                 "top_p": 0.9
             }
