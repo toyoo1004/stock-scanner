@@ -1,39 +1,71 @@
 name: Daily Stock Scan
+
 on:
   schedule:
-    - cron: '50 6 * * *'     # 테스트용: KST 15:08 (오후 3시 8분)
-    - cron: '40 20 * * *'   # 본 실행: KST 05:40
-    - cron: '45 20 * * *'   # 본 실행: KST 05:45
+    # ✅ 테스트용: KST 16:00 ~ 16:05
+    - cron: '0-5 7 * * *'
+
+    # ✅ 본 실행용 (종가 매수): KST 05:40 ~ 05:45
+    - cron: '40-45 20 * * *'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
+      # 🔥 핵심: KST 시간 윈도우 체크 (cron 오차 방어)
+      - name: Time window check (KST)
+        run: |
+          KST_TIME=$(TZ=Asia/Seoul date +%H:%M)
+          echo "🕒 Current KST time: $KST_TIME"
+
+          # 테스트 윈도우
+          if [[ "$KST_TIME" >= "16:00" && "$KST_TIME" <= "16:05" ]]; then
+            echo "✅ 테스트 실행 시간"
+            exit 0
+          fi
+
+          # 본 실행 윈도우 (종가 매수)
+          if [[ "$KST_TIME" >= "05:40" && "$KST_TIME" <= "05:45" ]]; then
+            echo "✅ 본 실행 시간 (종가 매수)"
+            exit 0
+          fi
+
+          echo "⏭ 실행 시간 아님 → 종료"
+          exit 1
+
       - name: Install dependencies
         run: |
           pip install --upgrade yfinance pandas google-generativeai
-          # 만약 향후에 완전히 패키지가 바뀌면 google-genai 로 변경 필요
+          # 향후 필요 시 google-genai 로 변경 가능
+
       - name: Run Scanner
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # 이 부분이 핵심입니다.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python scanner.py
-      
+
+      # 📧 성공 시에만 메일 발송
       - name: Send Mail
-        if: always()
+        if: success()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           username: toyoo1004@gmail.com
-          password: ${{secrets.MAIL_PASSWORD}}
-          subject: "🎯 오늘의 Gemini 3 주식 분석 리포트"
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "🎯 오늘의 Gemini 주식 분석 리포트"
           to: toyoo1004@gmail.com
           from: Stock AI Bot
-          body: "Gemini 3 Flash가 분석한 오늘의 매수 신호입니다. 분석 리포트를 확인하세요."
+          body: |
+            Gemini가 분석한 오늘의 종가 매수 후보입니다.
+            첨부된 리포트를 확인하세요.
           attachments: result.txt
