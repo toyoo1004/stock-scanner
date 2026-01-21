@@ -134,14 +134,15 @@ Readiness 점수: {readiness:.1f}%
 거래량: 평균 대비 {vol_ratio:.1f}배
 OBV 상태: {obv_status}
 
-요청:
-기술적 관점에서 왜 지금이 매수 타이밍인지
-한국어로 3문장 이내로 간결하게 설명하세요.
-문장은 중간에서 절대 끊지 마세요.
+[작성 규칙 - 필독]
+1. 단순히 '점수는 몇 점이다'라고 수치를 반복하는 행위는 절대 금지합니다.
+2. 수급(OBV)과 거래량 변화가 차트에 미치는 기술적 영향을 중심으로 '분석'을 하세요.
+3. 반드시 "~입니다"로 끝나는 완결된 한국어 문장 3개로 작성하세요.
+4. "왜 지금 매수해야 하는지"에 대한 날카로운 통찰을 담으세요.
 """
         response = model.generate_content(prompt)
 
-        if response and response.text:
+    if response and response.text and len(response.text) > 10:
             return response.text.strip()
         else:
             return "AI 분석 결과 없음"
@@ -150,6 +151,14 @@ OBV 상태: {obv_status}
         # SyntaxError를 방지하기 위해 반드시 필요한 예외 처리 블록입니다.
         return f"AI 분석 일시 지연 (사유: {str(e)[:50]})"
 
+# 2. 실행부 수정 (스레드 개수 하향 조정)
+if __name__ == "__main__":
+    all_tickers = list(set([t for sub in SECTORS.values() for t in sub]))
+    print(f"Scanning {len(all_tickers)} tickers...")
+    
+    # max_workers를 10에서 3으로 줄여 API 부하를 방지합니다.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        results = list(executor.map(scan_logic, all_tickers))
 # ===============================
 # 4️⃣ 스캔 로직 (OBV 계산 및 점수 산출)
 # ===============================
