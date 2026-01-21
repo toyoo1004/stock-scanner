@@ -113,8 +113,6 @@ SECTORS = {
 # ===============================
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
-        if not GEMINI_API_KEY:
-        return "AI 분석 불가 (API Key 없음)"
    try:
         model = genai.GenerativeModel(
             model_name="models/gemini-2.5-flash",
