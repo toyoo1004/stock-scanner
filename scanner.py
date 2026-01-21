@@ -12,9 +12,16 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # === [2. 종목 리스트] ===
 SECTORS = {
-    "AI & Tech": ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "PLTR", "AVGO", "ADBE", "CRM", "AMD", "IBM", "NOW", "INTC", "QCOM", "AMAT", "MU", "LRCX", "ADI", "SNOW", "DDOG", "NET", "MDB", "PANW", "CRWD", "ZS", "FTNT", "TEAM", "WDAY", "SMCI", "ARM", "PATH", "AI", "SOUN", "BBAI", "ORCL", "CSCO"],
-    "Bio & Health": ["LLY", "NVO", "AMGN", "PFE", "VKTX", "ALT", "GILD", "BMY", "JNJ", "ABBV", "MRK", "BIIB", "REGN", "VRTX", "MRNA", "BNTX", "NVS", "AZN", "SNY", "ALNY", "SRPT", "BMRN", "INCY", "UTHR", "GERN", "CRSP", "EDIT", "NTLA", "BEAM", "AXSM"],
-    "Finance & Energy": ["JPM", "BAC", "WFC", "C", "GS", "MS", "COF", "AXP", "V", "MA", "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "OXY", "PSX", "VLO", "HAL", "BKR", "FANG", "APA", "CTRA", "WMB", "KMI", "OKE", "TRGP", "LNG", "EQT", "RRC", "MTDR", "CIVI", "AES", "CCJ", "SMR"]
+   "AI & Big Tech": ["NVDA","MSFT","GOOGL","AMZN","META","AAPL","AVGO","AMD","INTC","QCOM","IBM","ORCL","CSCO","ADBE","CRM","NOW","PLTR","SNOW","DDOG","MDB","NET","SMCI","ARM","PATH","AI","SOUN","BBAI","MU","LRCX","AMAT","ADI","ASML","TSM","TXN","KLAC","MRVL","NXPI","MPWR","TER"],
+   "Cloud & Software": ["MSFT","AMZN","GOOGL","ORCL","CRM","NOW","TEAM","WDAY","ADBE","INTU","SNOW","DDOG","MDB","NET","OKTA","ZS","PANW","CRWD","FTNT","CHKP","QLYS","GEN","DOCU","DBX","BOX","SUMO","NCNO","WK","FROG","NCNO"],
+   "Semiconductors": ["NVDA","AMD","AVGO","INTC","TSM","ASML","AMAT","LRCX","MU","ADI","TXN","QCOM","NXPI","MRVL","KLAC","MPWR","ON","MCHP","SWKS","QRVO","WOLF","COHR","IPGP","LSCC","RMBS","FORM","ACLS","CAMT","UCTT","ICHR","AEHR","GFS"],
+   "Bio & Pharma": ["LLY","NVO","AMGN","PFE","GILD","BMY","JNJ","ABBV","MRK","BIIB","REGN","VRTX","MRNA","BNTX","NVS","AZN","SNY","ALNY","SRPT","BMRN","INCY","UTHR","GERN","CRSP","EDIT","NTLA","BEAM","AXSM","ILMN","IONS","HALO","TECH","WST","RGEN"],
+   "Financials & Fintech": ["JPM","BAC","WFC","C","GS","MS","COF","AXP","V","MA","DFS","SYF","ALLY","USB","PNC","TFC","FITB","HBAN","KEY","CFG","MTB","CMA","ZION","NU","SOFI","HOOD","SQ","PYPL","AFRM","UPST","LC","DAVE","GLBE","BILL","TOST"],
+   "Energy & Uranium": ["XOM","CVX","COP","SLB","EOG","MPC","OXY","PSX","VLO","HAL","BKR","DVN","FANG","APA","CTRA","WMB","KMI","OKE","TRGP","LNG","EQT","RRC","MTDR","CIVI","CCJ","UUUU","NXE","UEC","DNN","SMR","BWXT","LEU","OKLO","CEG","VST"],
+   "Industrial & Defense": ["CAT","DE","HON","GE","MMM","UNP","EMR","ETN","PH","NSC","CSX","CMI","ROK","AME","DOV","ITW","PWR","EME","ACM","LMT","RTX","NOC","GD","LHX","HII","LDOS","TXT","HWM","HEI","TDY","AJRD","MTSI","RCAT"],
+   "Consumer & Retail": ["AMZN","WMT","COST","HD","LOW","TGT","ROST","TJX","DG","DLTR","BJ","NKE","LULU","DECK","ONON","CROX","SKX","RL","ANF","AEO","URBN","EL","ULTA","ELF","SBUX","CMG","MCD","YUM","DPZ","SHAK","WING","MNST"],
+   "Media & Communication": ["NFLX","DIS","WBD","PARA","SPOT","ROKU","LYV","TKO","FOXA","CMCSA","FUBO","GOOGL","META","AAPL","SIRI","WMG","UMG","NXST","SBGI"],
+   "Space & Future Tech": ["RKLB","ASTS","LUNR","PL","SPIR","BKSY","VSAT","IRDM","JOBY","ACHR","UP","MNTS","RDW","SIDU","LLAP","BA","HON","LMT","NOC","RTX","GD","IONQ","RGTI","QUBT","IBM","MSFT","GOOGL"]
 }
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
