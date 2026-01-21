@@ -1,17 +1,15 @@
 name: Daily Stock Scan
 
 on:
+  # 🔁 자동 실행 (UTC 기준 → KST 05:40~05:45)
   schedule:
-    # ✅ 테스트용: KST 16:10 ~ 16:15
-    - cron: '10-15 7 * * *'
-
-    # ✅ 본 실행용 (종가 매수): KST 05:40 ~ 05:45
     - cron: '40-45 20 * * *'
 
+  # 🖐 수동 실행 (시간 무관)
   workflow_dispatch:
 
 jobs:
-  build:
+  scan:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,45 +21,49 @@ jobs:
         with:
           python-version: '3.11'
 
-      # 🔥 KST 시간 윈도우 체크 (cron 오차 완전 방어)
+      # ⏰ 시간 체크 (Manual은 무조건 통과, Schedule만 제한)
       - name: Time window check (KST)
+        id: timecheck
         run: |
+          # Manual 실행이면 무조건 실행
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=yes" >> $GITHUB_OUTPUT
+            echo "🟢 Manual 실행 → 시간 체크 스킵"
+            exit 0
+          fi
+
+          # Schedule 실행일 경우만 시간 체크
           HOUR=$(TZ=Asia/Seoul date +%H)
           MIN=$(TZ=Asia/Seoul date +%M)
-
           NOW=$((10#$HOUR * 60 + 10#$MIN))
 
-          TEST_START=$((16 * 60 + 10))
-          TEST_END=$((16 * 60 + 15))
+          START=$((5 * 60 + 40))   # 05:40
+          END=$((5 * 60 + 45))     # 05:45
 
-          MAIN_START=$((5 * 60 + 40))
-          MAIN_END=$((5 * 60 + 45))
+          echo "🕒 Current KST: ${HOUR}:${MIN}"
 
-          if (( NOW >= TEST_START && NOW <= TEST_END )); then
-            exit 0
+          if (( NOW >= START && NOW <= END )); then
+            echo "run=yes" >> $GITHUB_OUTPUT
+            echo "✅ 종가 매수 실행 시간"
+          else
+            echo "run=no" >> $GITHUB_OUTPUT
+            echo "⏭ 실행 시간 아님 → 스킵"
           fi
-
-          if (( NOW >= MAIN_START && NOW <= MAIN_END )); then
-            exit 0
-          fi
-
-          exit 1
 
       - name: Install dependencies
+        if: steps.timecheck.outputs.run == 'yes'
         run: |
-          pip install --upgrade pip
-          pip install yfinance pandas google-generativeai
+          pip install --upgrade yfinance pandas google-generativeai
 
-      # 🚫 로그에 키 출력 금지 (환경변수만 주입)
       - name: Run Scanner
+        if: steps.timecheck.outputs.run == 'yes'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python scanner.py
+        run: python scanner.py
 
-      # 📧 성공 시에만 메일 발송
+      # 📧 스캐너 실행 + 결과 있을 때만 메일
       - name: Send Mail
-        if: success()
+        if: steps.timecheck.outputs.run == 'yes'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
