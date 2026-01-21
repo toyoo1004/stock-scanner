@@ -113,7 +113,18 @@ SECTORS = {
 # ===============================
 
 def analyze_with_gemini(ticker, readiness, price, vol_ratio, obv_status):
-    try:
+        if not GEMINI_API_KEY:
+        return "AI 분석 불가 (API Key 없음)"
+   try:
+        model = genai.GenerativeModel(
+            model_name="models/gemini-2.5-flash",
+            generation_config={
+                "max_output_tokens": 220,
+                "temperature": 0.4,
+                "top_p": 0.9
+            }
+        )
+
         prompt = f"""
 당신은 월스트리트 출신 퀀트 분석가입니다.
 
@@ -126,6 +137,7 @@ OBV 상태: {obv_status}
 요청:
 기술적 관점에서 왜 지금이 매수 타이밍인지
 한국어로 3문장 이내로 간결하게 설명하세요.
+문장은 중간에서 절대 끊지 마세요.
 """
         response = model.generate_content(prompt)
 
